@@ -12,6 +12,8 @@ import {
     RESOLUTION_AUTO,
     TextureHandler,
     Vec3,
+    XRSPACE_LOCALFLOOR,
+    XRTYPE_AR,
     createGraphicsDevice
 } from 'playcanvas';
 import type { BoundingBox } from 'playcanvas';
@@ -117,7 +119,25 @@ let lastPointerY = 0;
 let isControlKeyDown = false;
 let activeView = 0;
 let transition: { start: number; duration: number; from: CameraPose; to: CameraPose } | null = null;
-const views: ProductView[] = PRODUCT_VIEWS.map((view) => ({ ...view }));
+let splatEntity: Entity | null = null;
+let splatBounds: BoundingBox | undefined;
+let views: ProductView[] = PRODUCT_VIEWS.map((view) => ({ ...view }));
+
+// Keep the camera poses authored in the private editor, while the production
+// interface remains read-only. Match by id so removed/renumbered views migrate.
+try {
+    const saved = localStorage.getItem('ktm-duke-390-views');
+    if (saved) {
+        const savedViews = JSON.parse(saved) as ProductView[];
+        const byId = new Map(savedViews.map((view) => [view.id, view]));
+        views = PRODUCT_VIEWS.map((view) => {
+            const savedView = byId.get(view.id);
+            return savedView
+                ? { ...view, position: savedView.position, target: savedView.target, fov: savedView.fov }
+                : { ...view };
+        });
+    }
+} catch { /* Fall back to the bundled production views. */ }
 
 const updateCameraPosition = () => {
     const yawRad = (yaw * Math.PI) / 180;
@@ -223,13 +243,50 @@ views.forEach((view, index) => {
     viewNav?.appendChild(button);
 });
 
-document.querySelector('#xr-button')?.addEventListener('click', async () => {
-    const xr = (navigator as Navigator & { xr?: { isSessionSupported(mode: string): Promise<boolean>; requestSession(mode: string, options?: object): Promise<unknown> } }).xr;
-    if (!xr || !(await xr.isSessionSupported('immersive-ar'))) {
+const xrButton = document.querySelector<HTMLButtonElement>('#xr-button');
+const setArTransform = () => {
+    if (!splatEntity || !splatBounds) return;
+    const size = splatBounds.halfExtents.clone().mulScalar(2);
+    const capturedLength = Math.max(size.x, size.y, size.z);
+    const realLengthMeters = 2.05;
+    const scale = realLengthMeters / capturedLength;
+    const groundY = splatCenter.y - splatBounds.halfExtents.y;
+    splatEntity.setLocalScale(scale, scale, scale);
+    splatEntity.setLocalPosition(
+        -splatCenter.x * scale,
+        -groundY * scale,
+        -1.65 - splatCenter.z * scale
+    );
+};
+
+xrButton?.addEventListener('click', () => {
+    const xr = app.xr;
+    if (!camera.camera || !xr?.supported || !xr.isAvailable(XRTYPE_AR)) {
         alert('La realidad aumentada WebXR requiere un teléfono y navegador compatibles.');
         return;
     }
-    await xr.requestSession('immersive-ar', { requiredFeatures: ['local-floor'], optionalFeatures: ['hit-test'] });
+    camera.camera.clearColor = new Color(0, 0, 0, 0);
+    setArTransform();
+    xr.start(camera.camera, XRTYPE_AR, XRSPACE_LOCALFLOOR, {
+        callback: (error) => {
+            if (error) {
+                camera.camera!.clearColor = new Color(0.02, 0.025, 0.035, 1);
+                document.body.classList.remove('xr-active');
+                alert('No se pudo iniciar la realidad aumentada en este dispositivo.');
+            }
+        }
+    });
+});
+
+app.xr?.on('start', () => document.body.classList.add('xr-active'));
+app.xr?.on('end', () => {
+    document.body.classList.remove('xr-active');
+    if (camera.camera) camera.camera.clearColor = new Color(0.02, 0.025, 0.035, 1);
+    if (splatEntity) {
+        splatEntity.setLocalScale(1, 1, 1);
+        splatEntity.setLocalPosition(0, 0, 0);
+    }
+    applyCameraPose(views[activeView] ?? CAMERA_POSE!);
 });
 
 const frameSplat = (splat: Entity, aabb?: BoundingBox) => {
@@ -466,12 +523,14 @@ const splatAsset = new Asset('SuperSplat', 'gsplat', {
 
 splatAsset.on('load', () => {
     const splat = new Entity('Splat');
+    splatEntity = splat;
     splat.setLocalEulerAngles(0, 0, 180);
     splat.addComponent('gsplat', {
         asset: splatAsset
     });
     const resource = splatAsset.resource as { aabb?: BoundingBox } | null;
     const aabb = resource?.aabb;
+    splatBounds = aabb;
 
     app.root.addChild(splat);
     if (aabb) splat.getWorldTransform().transformPoint(aabb.center, splatCenter);

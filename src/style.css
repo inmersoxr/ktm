@@ -24,6 +24,10 @@ body {
     touch-action: none;
 }
 #app:active { cursor: grabbing; }
+body.xr-active #product-header,
+body.xr-active #view-copy,
+body.xr-active #view-nav,
+body.xr-active #controls { display: none; }
 
 button { font: inherit; }
 #product-header { position: fixed; inset: 0 0 auto; z-index: 4; display: flex; justify-content: space-between; align-items: center; padding: 22px 28px; pointer-events: none; }

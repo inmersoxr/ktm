@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>KTM Duke 390 · Interactive</title>
+        <style>
+            html,
+            body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                overflow: hidden;
+                background: #0d0f12;
+            }
+
+            #app {
+                display: block;
+                width: 100%;
+                height: 100%;
+                background: #0d0f12;
+            }
+        </style>
+    </head>
+    <body>
+        <canvas id="app"></canvas>
+        <header id="product-header">
+            <div class="brand"><span>KTM</span><strong>DUKE 390</strong></div>
+            <div class="header-actions">
+                <button id="xr-button" type="button">Ver en RA</button>
+            </div>
+        </header>
+        <section id="view-copy" aria-live="polite">
+            <div id="view-kicker">01 · EXPLORAR</div>
+            <h1 id="view-title">Vista general</h1>
+            <p id="view-description">KTM Duke 390 — diseño compacto, postura agresiva y carácter urbano.</p>
+        </section>
+        <nav id="view-nav" aria-label="Vistas de la motocicleta"></nav>
+        <div id="loader" role="status" aria-live="polite">
+            <div class="loader-mark" aria-hidden="true"></div>
+            <div class="loader-copy">
+                <div class="loader-title">Loading splat</div>
+                <div id="loader-message" class="loader-message">Preparing scene...</div>
+                <div class="loader-progress" aria-hidden="true">
+                    <div id="loader-progress-bar"></div>
+                </div>
+            </div>
+        </div>
+        <div id="controls" aria-label="Navigation controls">
+            <div class="control-primary">
+                <div class="key-grid" aria-hidden="true">
+                    <span></span>
+                    <kbd>W</kbd>
+                    <span></span>
+                    <kbd>A</kbd>
+                    <kbd>S</kbd>
+                    <kbd>D</kbd>
+                </div>
+                <div class="control-primary-copy">
+                    <span class="control-action">Move</span>
+                    <span class="control-detail">WASD or arrows</span>
+                </div>
+            </div>
+            <div class="control-list">
+                <div class="control-row">
+                    <span class="control-shortcut">
+                        <kbd>Q</kbd>
+                        <kbd>E</kbd>
+                    </span>
+                    <span class="control-label">Down / up</span>
+                </div>
+                <div class="control-row">
+                    <span class="control-token">Drag</span>
+                    <span class="control-label">Orbit</span>
+                </div>
+                <div class="control-row">
+                    <span class="control-token">Right drag</span>
+                    <span class="control-label">Pan</span>
+                </div>
+                <div class="control-row">
+                    <span class="control-token">Wheel</span>
+                    <span class="control-label">Zoom</span>
+                </div>
+            </div>
+        </div>
+        <script type="module" src="/src/main.ts"></script>
+    </body>
+</html>

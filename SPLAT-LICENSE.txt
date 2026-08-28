@@ -1,0 +1,8 @@
+This license applies to the included splat asset files in public/splat.
+
+Title: KTM Duke 390
+Author: Elias Tuzar (https://superspl.at/user/etv)
+Source: https://superspl.at/scene/b2fa42c2
+License: CC Attribution (Creative Commons Attribution)
+License URL: http://creativecommons.org/licenses/by/4.0/
+Requirements: Author must be credited. Commercial use is allowed.

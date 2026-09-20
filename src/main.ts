@@ -123,21 +123,8 @@ let splatEntity: Entity | null = null;
 let splatBounds: BoundingBox | undefined;
 let views: ProductView[] = PRODUCT_VIEWS.map((view) => ({ ...view }));
 
-// Keep the camera poses authored in the private editor, while the production
-// interface remains read-only. Match by id so removed/renumbered views migrate.
-try {
-    const saved = localStorage.getItem('ktm-duke-390-views');
-    if (saved) {
-        const savedViews = JSON.parse(saved) as ProductView[];
-        const byId = new Map(savedViews.map((view) => [view.id, view]));
-        views = PRODUCT_VIEWS.map((view) => {
-            const savedView = byId.get(view.id);
-            return savedView
-                ? { ...view, position: savedView.position, target: savedView.target, fov: savedView.fov }
-                : { ...view };
-        });
-    }
-} catch { /* Fall back to the bundled production views. */ }
+// Production always uses the camera poses bundled with this deployment.
+// Editor/localStorage data must never override the public tour.
 
 const updateCameraPosition = () => {
     const yawRad = (yaw * Math.PI) / 180;

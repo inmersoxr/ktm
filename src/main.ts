@@ -4,7 +4,7 @@ import {
     Asset,
     CameraComponentSystem,
     Color,
-    DEVICETYPE_WEBGL2,
+    DEVICETYPE_WEBGPU,
     Entity,
     FILLMODE_FILL_WINDOW,
     GSplatComponentSystem,
@@ -69,9 +69,7 @@ const hideLoader = () => {
 };
 
 const device = await createGraphicsDevice(canvas, {
-    // WebXR immersive-ar on Android/Chrome requires the WebGL2 XR path.
-    // Force WebGL2 for this product viewer instead of booting the scene on WebGPU.
-    deviceTypes: [DEVICETYPE_WEBGL2],
+    deviceTypes: [DEVICETYPE_WEBGPU],
 
     // Gaussian splats do not benefit from antialiasing and it is expensive.
     antialias: false

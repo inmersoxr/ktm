@@ -247,22 +247,7 @@ const setArTransform = () => {
 };
 
 xrButton?.addEventListener('click', () => {
-    const xr = app.xr;
-    if (!camera.camera || !xr?.supported || !xr.isAvailable(XRTYPE_AR)) {
-        alert('La realidad aumentada WebXR requiere un teléfono y navegador compatibles.');
-        return;
-    }
-    camera.camera.clearColor = new Color(0, 0, 0, 0);
-    setArTransform();
-    xr.start(camera.camera, XRTYPE_AR, XRSPACE_LOCALFLOOR, {
-        callback: (error) => {
-            if (error) {
-                camera.camera!.clearColor = new Color(0.02, 0.025, 0.035, 1);
-                document.body.classList.remove('xr-active');
-                alert('No se pudo iniciar la realidad aumentada en este dispositivo.');
-            }
-        }
-    });
+    window.location.href = './ar.html';
 });
 
 app.xr?.on('start', () => document.body.classList.add('xr-active'));

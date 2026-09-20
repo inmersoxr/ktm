@@ -257,9 +257,40 @@ kbd {
     #edit-toggle { display: none; }
     #view-copy { top: 18%; left: 18px; }
     #view-copy h1 { font-size: 38px; }
-    #view-nav { top: auto; right: 12px; bottom: 18px; left: 12px; display: flex; justify-content: center; transform: none; }
-    .view-button small { display: none; }
-    .view-button span { width: 38px; height: 38px; }
+    #view-nav {
+        top: auto;
+        right: 12px;
+        bottom: 18px;
+        left: 12px;
+        display: flex;
+        justify-content: flex-start;
+        gap: 7px;
+        overflow-x: auto;
+        padding: 4px 0;
+        transform: none;
+        scrollbar-width: none;
+    }
+    #view-nav::-webkit-scrollbar { display: none; }
+    .view-button {
+        flex: 0 0 auto;
+        justify-content: flex-start;
+        gap: 7px;
+        padding: 7px 10px 7px 7px;
+        border: 1px solid rgb(255 255 255 / 16%);
+        border-radius: 999px;
+        background: rgb(9 11 14 / 72%);
+        backdrop-filter: blur(12px);
+    }
+    .view-button small {
+        display: block;
+        width: auto;
+        max-width: 150px;
+        opacity: 1;
+        overflow: visible;
+        font-size: 11px;
+        font-weight: 650;
+    }
+    .view-button span { width: 30px; height: 30px; flex: 0 0 30px; }
     #controls {
         display: none;
     }

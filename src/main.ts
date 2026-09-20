@@ -42,7 +42,7 @@ const FLY_MOVE_ACCELERATION_DAMPING = 0.992;
 const FLY_MOVE_DECELERATION_DAMPING = 0.993;
 const WHEEL_ZOOM_SPEED = 0.06 / 60;
 const PINCH_ZOOM_SPEED = WHEEL_ZOOM_SPEED * 2;
-const MIN_PITCH = -90;
+const MIN_PITCH = 0;
 const MAX_PITCH = 90;
 const MIN_SCENE_RADIUS = 0.5;
 
@@ -179,7 +179,7 @@ const applyCameraPose = (pose: CameraPose) => {
 
     target.set(pose.target[0], pose.target[1], pose.target[2]);
     yaw = (Math.atan2(dx, dz) * 180) / Math.PI;
-    pitch = (Math.asin(Math.max(-1, Math.min(1, dy / poseDistance))) * 180) / Math.PI;
+    pitch = Math.max(MIN_PITCH, (Math.asin(Math.max(-1, Math.min(1, dy / poseDistance))) * 180) / Math.PI);
     distance = poseDistance;
     fov = pose.fov;
 

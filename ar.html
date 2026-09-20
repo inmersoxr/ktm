@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <title>KTM Duke 390 · Realidad aumentada</title>
+    <style>
+        html, body { width:100%; height:100%; margin:0; overflow:hidden; background:#000; font-family:Arial,sans-serif; }
+        #ar-canvas { display:block; width:100%; height:100%; background:#000; }
+        #ar-ui { position:fixed; inset:0; pointer-events:none; display:flex; flex-direction:column; justify-content:space-between; padding:calc(18px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom)); box-sizing:border-box; z-index:10; }
+        #ar-top { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+        #ar-status { max-width:520px; padding:11px 14px; border-radius:10px; background:rgba(0,0,0,.68); color:#fff; font-size:14px; line-height:1.35; backdrop-filter:blur(8px); }
+        button { pointer-events:auto; border:0; border-radius:999px; padding:13px 18px; font-weight:700; font-size:14px; }
+        #ar-back { background:rgba(255,255,255,.9); color:#111; }
+        #ar-start { align-self:center; background:#ff5a00; color:#fff; padding:15px 24px; }
+        body.xr-active #ar-ui { pointer-events:none; }
+        body.xr-active #ar-status { margin:0 auto; }
+    </style>
+</head>
+<body>
+    <canvas id="ar-canvas"></canvas>
+    <div id="ar-ui">
+        <div id="ar-top">
+            <div id="ar-status">Cargando motocicleta…</div>
+            <button id="ar-back" type="button">Volver</button>
+        </div>
+        <button id="ar-start" type="button">Iniciar RA</button>
+    </div>
+    <script type="module" src="/src/ar.ts"></script>
+</body>
+</html>

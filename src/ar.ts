@@ -172,21 +172,40 @@ app.xr?.on('end', () => {
     latestRotation = null;
 });
 
-startButton.addEventListener('click', () => {
-    if (!camera.camera || !app.xr?.supported || !app.xr.isAvailable(XRTYPE_AR)) {
-        setStatus('La RA WebXR no está disponible en este navegador. Abre este enlace en Chrome para Android con servicios de RA de Google activos.');
+const startAr = () => {
+    if (!camera.camera || !app.xr) {
+        setStatus('No se pudo inicializar WebXR.');
         return;
     }
 
+    setStatus('Iniciando RA…');
+
+    // Do not block the user gesture on PlayCanvas' cached availability flag.
+    // The authoritative test is the immersive-ar session request itself.
     app.xr.start(camera.camera, XRTYPE_AR, XRSPACE_LOCALFLOOR, {
         callback: (error) => {
             if (error) {
                 console.error(error);
-                setStatus('No se pudo iniciar la sesión RA en este dispositivo.');
+                const message = error instanceof Error ? error.message : String(error);
+                setStatus(`WebXR rechazó la sesión RA: ${message}`);
             }
         }
     });
-});
+};
+
+startButton.addEventListener('click', startAr);
+
+if (app.xr) {
+    const syncAvailability = () => {
+        if (app.xr?.isAvailable(XRTYPE_AR)) {
+            setStatus(splatEntity ? 'Modelo listo. Pulsa “Iniciar RA”.' : 'RA disponible. Cargando motocicleta…');
+        }
+    };
+    app.xr.on('available', (type, available) => {
+        if (type === XRTYPE_AR && available) syncAvailability();
+    });
+    syncAvailability();
+}
 
 const resize = () => app.resizeCanvas();
 window.addEventListener('resize', resize);

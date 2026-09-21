@@ -306,8 +306,8 @@ app.xr?.hitTest.on('available', () => {
 
                 // The reticle and the eventual model placement use the exact
                 // same world-space transform.
-                reticle.setPosition(latestPosition);
-                reticle.setRotation(latestRotation);
+                reticle.setPosition(position);
+                reticle.setRotation(rotation);
                 reticle.enabled = true;
                 setStatus('Superficie detectada. Toca el aro para colocar la KTM.');
             });

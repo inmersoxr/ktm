@@ -137,7 +137,7 @@ let activeView = 0;
 let transition: { start: number; duration: number; from: CameraPose; to: CameraPose } | null = null;
 let splatEntity: Entity | null = null;
 let splatBounds: BoundingBox | undefined;
-const CAMERA_STORAGE_KEY = 'ktm-camera-views-v5';
+const CAMERA_STORAGE_KEY = 'ktm-camera-views-v6';
 
 const isFinitePose = (pose: Partial<CameraPose> | null | undefined): pose is CameraPose =>
     !!pose &&
@@ -269,20 +269,21 @@ const startViewTransition = (index: number) => {
 
     transition = { start: performance.now(), duration: 700, from: currentPose(), to: view };
     document.querySelectorAll<HTMLButtonElement>('.view-button').forEach((button, i) => button.classList.toggle('active', i === index));
-    document.querySelector('#view-kicker')!.textContent = `${String(view.number).padStart(2, '0')} · EXPLORAR`;
+    document.querySelector('#view-kicker')!.textContent = `${String(view.number).padStart(2, '0')} · ${view.group === 'view' ? 'VISTA' : 'DETALLE'}`;
     document.querySelector('#view-title')!.textContent = view.title;
     document.querySelector('#view-description')!.textContent = view.description;
     updateEditorLabel();
 };
 
-const viewNav = document.querySelector<HTMLElement>('#view-nav');
+const viewNavViews = document.querySelector<HTMLElement>('#view-nav-views');
+const viewNavDetails = document.querySelector<HTMLElement>('#view-nav-details');
 views.forEach((view, index) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `view-button${index === 0 ? ' active' : ''}`;
     button.innerHTML = `<span>${view.number}</span><small>${view.title}</small>`;
     button.addEventListener('click', () => startViewTransition(index));
-    viewNav?.appendChild(button);
+    (view.group === 'view' ? viewNavViews : viewNavDetails)?.appendChild(button);
 });
 
 let editorOpen = false;

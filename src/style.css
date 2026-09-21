@@ -299,3 +299,92 @@ kbd {
         grid-template-columns: 1fr;
     }
 }
+
+
+/* Split product navigation: complete views on the left, technical details on the right. */
+body.xr-active .view-nav { display: none; }
+
+#view-copy {
+    text-shadow: 0 2px 30px rgb(0 0 0 / 92%), 0 1px 4px rgb(0 0 0 / 90%);
+}
+#view-copy h1 { color: rgb(255 255 255 / 97%); }
+#view-copy p { color: rgb(255 255 255 / 82%); }
+#view-kicker { color: #ff7a3b; }
+
+.view-nav {
+    position: fixed;
+    z-index: 5;
+    top: 50%;
+    display: grid;
+    gap: 8px;
+    transform: translateY(-50%);
+}
+.view-nav-left { left: 24px; }
+.view-nav-right { right: 24px; }
+.view-nav-label {
+    margin-bottom: 3px;
+    color: rgb(255 255 255 / 42%);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .16em;
+}
+.view-nav-right .view-nav-label { text-align: right; }
+.view-nav-left .view-button { justify-content: flex-start; }
+.view-nav-right .view-button { justify-content: flex-end; }
+.view-nav-right .view-button small { order: 1; text-align: right; }
+.view-nav-right .view-button span { order: 2; }
+
+@media (max-width: 520px) {
+    #view-copy {
+        top: 18%;
+        left: 54px;
+        width: calc(100vw - 108px);
+    }
+    #view-copy h1 { font-size: 34px; }
+    #view-copy p {
+        color: rgb(255 255 255 / 86%);
+        font-size: 13px;
+        line-height: 1.45;
+    }
+    .view-nav {
+        top: 52%;
+        gap: 7px;
+        transform: translateY(-50%);
+    }
+    .view-nav-left { left: 10px; }
+    .view-nav-right { right: 10px; }
+    .view-nav-label {
+        margin-bottom: 2px;
+        font-size: 8px;
+        letter-spacing: .12em;
+    }
+    .view-nav .view-button {
+        width: auto;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        backdrop-filter: none;
+    }
+    .view-nav .view-button span {
+        width: 30px;
+        height: 30px;
+        flex: 0 0 30px;
+        background: rgb(9 11 14 / 76%);
+        backdrop-filter: blur(12px);
+    }
+    .view-nav .view-button small {
+        display: none;
+        width: auto;
+        max-width: 112px;
+        opacity: 0;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1.15;
+        white-space: normal;
+    }
+    .view-nav .view-button.active small {
+        display: block;
+        width: auto;
+        opacity: 1;
+    }
+}

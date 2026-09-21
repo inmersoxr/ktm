@@ -116,6 +116,9 @@ let dragMode: DragMode | null = null;
 let activePointerId: number | null = null;
 let lastPointerX = 0;
 let lastPointerY = 0;
+const touchPointers = new Map<number, { x: number; y: number }>();
+let pinchStartDistance = 0;
+let pinchStartCameraDistance = 0;
 let isControlKeyDown = false;
 let activeView = 0;
 let transition: { start: number; duration: number; from: CameraPose; to: CameraPose } | null = null;
@@ -287,7 +290,7 @@ editorPanel.innerHTML = `
         <button id="camera-reset-views" type="button">Restaurar</button>
         <button id="camera-editor-done" type="button">Listo</button>
     </div>
-    <div id="camera-editor-note">Mueve la cámara, selecciona una vista y guarda su posición. Las vistas guardadas son absolutas.</div>
+    <div id="camera-editor-note">Mueve la cámara, selecciona una vista y guarda su posición. En móvil: arrastra para orbitar y pellizca con dos dedos para acercar o alejar.</div>
 `;
 document.body.appendChild(editorPanel);
 
@@ -305,7 +308,7 @@ editorStyle.textContent = `
     position: fixed;
     z-index: 20;
     left: 50%;
-    bottom: 22px;
+    top: 76px;
     display: none;
     width: min(680px, calc(100vw - 28px));
     transform: translateX(-50%);
@@ -331,9 +334,15 @@ body.camera-editing #camera-editor { display: block; }
 body.camera-editing #view-copy { opacity: .28; }
 @media (max-width: 520px) {
     #camera-editor-toggle { padding: 9px 11px; font-size: 11px; }
-    body.camera-editing #view-nav { bottom: 190px; }
-    #camera-editor { bottom: 12px; }
-    .camera-editor-actions button { flex: 1 1 44%; }
+    #camera-editor {
+        top: 62px;
+        bottom: auto;
+        padding: 10px;
+    }
+    #camera-editor-label { margin-bottom: 7px; font-size: 12px; }
+    .camera-editor-actions { gap: 6px; }
+    .camera-editor-actions button { flex: 1 1 44%; padding: 8px 10px; font-size: 11px; }
+    #camera-editor-note { margin-top: 6px; font-size: 10px; }
 }
 `;
 document.head.appendChild(editorStyle);
@@ -481,12 +490,36 @@ const panTarget = (deltaX: number, deltaY: number) => {
     updateCamera();
 };
 
+const getTouchPinchDistance = () => {
+    const points = Array.from(touchPointers.values());
+    if (points.length < 2) return 0;
+    return Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+};
+
 canvas.addEventListener('pointerdown', (event) => {
-    if (activePointerId !== null) {
+    transition = null;
+
+    if (event.pointerType === 'touch') {
+        touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        canvas.setPointerCapture(event.pointerId);
+
+        if (touchPointers.size === 1) {
+            activePointerId = event.pointerId;
+            dragMode = 'orbit';
+            lastPointerX = event.clientX;
+            lastPointerY = event.clientY;
+        } else if (touchPointers.size === 2) {
+            // Two fingers switch from orbit to an absolute dolly gesture.
+            dragMode = null;
+            activePointerId = null;
+            pinchStartDistance = getTouchPinchDistance();
+            pinchStartCameraDistance = distance;
+        }
         return;
     }
 
-    transition = null;
+    if (activePointerId !== null) return;
+
     dragMode = event.button === 0
         ? 'orbit'
         : event.button === 1 || (event.button === 2 && (event.altKey || event.metaKey))
@@ -501,9 +534,20 @@ canvas.addEventListener('pointerdown', (event) => {
 });
 
 canvas.addEventListener('pointermove', (event) => {
-    if (activePointerId !== event.pointerId || !dragMode) {
-        return;
+    if (event.pointerType === 'touch' && touchPointers.has(event.pointerId)) {
+        touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+        if (touchPointers.size >= 2) {
+            const currentPinchDistance = getTouchPinchDistance();
+            if (pinchStartDistance > 0 && currentPinchDistance > 0) {
+                distance = clampDistance(pinchStartCameraDistance * (pinchStartDistance / currentPinchDistance));
+                updateCamera();
+            }
+            return;
+        }
     }
+
+    if (activePointerId !== event.pointerId || !dragMode) return;
 
     const deltaX = event.clientX - lastPointerX;
     const deltaY = event.clientY - lastPointerY;
@@ -523,9 +567,30 @@ canvas.addEventListener('pointermove', (event) => {
 });
 
 const endPointerDrag = (event: PointerEvent) => {
-    if (activePointerId !== event.pointerId) {
+    if (event.pointerType === 'touch') {
+        touchPointers.delete(event.pointerId);
+
+        if (canvas.hasPointerCapture(event.pointerId)) {
+            canvas.releasePointerCapture(event.pointerId);
+        }
+
+        if (touchPointers.size === 1) {
+            const [remainingId, point] = Array.from(touchPointers.entries())[0];
+            activePointerId = remainingId;
+            dragMode = 'orbit';
+            lastPointerX = point.x;
+            lastPointerY = point.y;
+        } else if (touchPointers.size === 0) {
+            activePointerId = null;
+            dragMode = null;
+        }
+
+        pinchStartDistance = 0;
+        pinchStartCameraDistance = distance;
         return;
     }
+
+    if (activePointerId !== event.pointerId) return;
 
     dragMode = null;
     activePointerId = null;

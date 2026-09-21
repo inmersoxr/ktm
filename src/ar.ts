@@ -40,15 +40,36 @@ const setStatus = (message: string) => {
     status.textContent = message;
 };
 
+let returnToViewerRequested = false;
+
+const returnToViewer = () => {
+    window.location.replace('./');
+};
+
 backButton.addEventListener('click', () => {
     const xr = arApp?.xr;
-    if (xr?.active) {
-        xr.end(() => {
-            window.location.href = './';
-        });
-    } else {
-        window.location.href = './';
+
+    if (!xr?.active) {
+        returnToViewer();
+        return;
     }
+
+    if (returnToViewerRequested) return;
+
+    returnToViewerRequested = true;
+    backButton.disabled = true;
+    setStatus('Saliendo de RA…');
+
+    // End the XR session first. Navigation happens from the manager's 'end'
+    // event, after PlayCanvas has completed its own WebXR teardown.
+    xr.end((error) => {
+        if (!error) return;
+
+        console.error(error);
+        returnToViewerRequested = false;
+        backButton.disabled = false;
+        setStatus('No se pudo cerrar la sesión RA. Intenta nuevamente.');
+    });
 });
 
 // Register the user-action handler before graphics/model initialization.
@@ -373,7 +394,6 @@ app.xr?.on('end', () => {
     startButton.hidden = false;
     backButton.hidden = false;
     arUi.style.pointerEvents = '';
-    setStatus('Sesión RA finalizada.');
     modelRoot.enabled = false;
     modelRoot.setLocalScale(1, 1, 1);
     userScale = 1;
@@ -383,12 +403,21 @@ app.xr?.on('end', () => {
     latestRotation = null;
     latestHitResult = null;
     reticle.enabled = false;
-    activeHitTestSource?.remove();
+
+    // XR session end already owns disposal of native hit-test and anchor
+    // resources. Calling remove()/destroy() here can race Android's teardown.
     activeHitTestSource = null;
-    if (activeAnchor) {
-        activeAnchor.destroy();
-        activeAnchor = null;
+    activeAnchor = null;
+
+    if (returnToViewerRequested) {
+        // Let the XR end event and the current frame settle before replacing
+        // the AR document with the WebGPU viewer.
+        window.setTimeout(returnToViewer, 50);
+        return;
     }
+
+    backButton.disabled = false;
+    setStatus('Sesión RA finalizada.');
 });
 
 if (app.xr) {

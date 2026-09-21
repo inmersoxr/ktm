@@ -71,11 +71,11 @@ const startAr = () => {
     // calling navigator.xr.requestSession(). Force only that cache entry so
     // the browser itself becomes the authority. This route is isolated from
     // the WebGPU product viewer.
-    const xr = arApp.xr as typeof arApp.xr & { _available?: Record<string, boolean> };
+    const xr = arApp.xr as any;
     if (xr._available) xr._available[XRTYPE_AR] = true;
 
     xr.start(arCamera.camera, XRTYPE_AR, XRSPACE_LOCALFLOOR, {
-        callback: (error) => {
+        callback: (error: Error | null) => {
             if (error) {
                 console.error(error);
                 const name = error instanceof DOMException ? error.name : 'Error';

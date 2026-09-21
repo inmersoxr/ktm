@@ -137,7 +137,7 @@ let activeView = 0;
 let transition: { start: number; duration: number; from: CameraPose; to: CameraPose } | null = null;
 let splatEntity: Entity | null = null;
 let splatBounds: BoundingBox | undefined;
-const CAMERA_STORAGE_KEY = 'ktm-camera-views-v3';
+const CAMERA_STORAGE_KEY = 'ktm-camera-views-v4';
 
 const isFinitePose = (pose: Partial<CameraPose> | null | undefined): pose is CameraPose =>
     !!pose &&

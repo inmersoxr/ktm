@@ -9,7 +9,9 @@ import {
     FILLMODE_FILL_WINDOW,
     GSplatComponentSystem,
     GSplatHandler,
+    RenderComponentSystem,
     RESOLUTION_AUTO,
+    StandardMaterial,
     TextureHandler,
     XRSPACE_LOCALFLOOR,
     XRSPACE_VIEWER,
@@ -25,8 +27,9 @@ const canvas = document.querySelector<HTMLCanvasElement>('#ar-canvas');
 const startButton = document.querySelector<HTMLButtonElement>('#ar-start');
 const backButton = document.querySelector<HTMLButtonElement>('#ar-back');
 const status = document.querySelector<HTMLDivElement>('#ar-status');
+const arUi = document.querySelector<HTMLElement>('#ar-ui');
 
-if (!canvas || !startButton || !backButton || !status) {
+if (!canvas || !startButton || !backButton || !status || !arUi) {
     throw new Error('Missing AR interface');
 }
 
@@ -76,6 +79,7 @@ const startAr = () => {
     if (xr._available) xr._available[XRTYPE_AR] = true;
 
     xr.start(arCamera.camera, XRTYPE_AR, XRSPACE_LOCALFLOOR, {
+        anchors: true,
         callback: (error: Error | null) => {
             if (error) {
                 console.error(error);
@@ -99,7 +103,7 @@ device.maxPixelRatio = Math.min(window.devicePixelRatio, 2);
 const options = new AppOptions();
 options.graphicsDevice = device;
 options.xr = XrManager;
-options.componentSystems = [CameraComponentSystem, GSplatComponentSystem];
+options.componentSystems = [CameraComponentSystem, GSplatComponentSystem, RenderComponentSystem];
 options.resourceHandlers = [TextureHandler, GSplatHandler];
 
 const app = new AppBase(canvas);
@@ -108,6 +112,10 @@ app.init(options);
 app.setCanvasFillMode(FILLMODE_FILL_WINDOW);
 app.setCanvasResolution(RESOLUTION_AUTO);
 app.start();
+
+if (app.xr) {
+    app.xr.domOverlay.root = arUi;
+}
 
 const camera = new Entity('AR Camera');
 arCamera = camera;
@@ -121,11 +129,30 @@ const modelRoot = new Entity('KTM Placement');
 app.root.addChild(modelRoot);
 modelRoot.enabled = false;
 
+const reticle = new Entity('Surface Reticle');
+reticle.addComponent('render', {
+    type: 'torus',
+    castShadows: false,
+    receiveShadows: false
+});
+reticle.setLocalScale(0.34, 0.035, 0.34);
+const reticleMaterial = new StandardMaterial();
+reticleMaterial.diffuse = new Color(1, 0.22, 0);
+reticleMaterial.emissive = new Color(1, 0.12, 0);
+reticleMaterial.update();
+if (reticle.render) {
+    reticle.render.material = reticleMaterial;
+}
+reticle.enabled = false;
+app.root.addChild(reticle);
+
 let splatEntity: Entity | null = null;
 let splatBounds: BoundingBox | undefined;
 let placed = false;
 let latestPosition: Vec3 | null = null;
 let latestRotation: Quat | null = null;
+let latestHitResult: XRHitTestResult | null = null;
+let activeAnchor: any = null;
 
 const filename = SPLAT_URL.split('/').pop() || 'splat';
 const splatAsset = new Asset('KTM Duke 390', 'gsplat', {
@@ -170,15 +197,47 @@ splatAsset.on('error', (error: unknown) => {
 app.assets.add(splatAsset);
 app.assets.load(splatAsset);
 
-const placeAtLatestHit = () => {
-    if (!latestPosition || !splatEntity) return;
+const applyPlacementPose = () => {
+    if (!latestPosition) return;
     modelRoot.setPosition(latestPosition);
     if (latestRotation) {
         modelRoot.setRotation(latestRotation);
     }
+};
+
+const placeAtLatestHit = () => {
+    if (!latestPosition || !splatEntity) return;
+
+    if (activeAnchor) {
+        activeAnchor.destroy();
+        activeAnchor = null;
+    }
+
+    applyPlacementPose();
     modelRoot.enabled = true;
     placed = true;
-    setStatus('KTM colocada. Toca otra superficie para moverla.');
+    setStatus('KTM colocada. Muévete alrededor: debe permanecer fija en ese punto.');
+
+    const hitResult = latestHitResult;
+    if (!hitResult || !app.xr?.anchors.available) {
+        return;
+    }
+
+    app.xr.anchors.create(hitResult, (error, anchor) => {
+        if (error || !anchor) {
+            console.error(error);
+            return;
+        }
+
+        activeAnchor = anchor;
+        const syncToAnchor = () => {
+            if (activeAnchor !== anchor) return;
+            modelRoot.setPosition(anchor.getPosition());
+            modelRoot.setRotation(anchor.getRotation());
+        };
+
+        anchor.on('change', syncToAnchor);
+    });
 };
 
 app.xr?.input.on('select', () => {
@@ -189,7 +248,9 @@ app.xr?.on('start', () => {
     document.body.classList.add('xr-active');
     startButton.hidden = true;
     backButton.hidden = true;
-    setStatus('Mueve el teléfono para detectar el piso y toca donde quieras colocar la KTM.');
+    reticle.enabled = false;
+    latestHitResult = null;
+    setStatus('Mueve el teléfono lentamente y apunta a una superficie plana.');
 
     if (!app.xr?.hitTest.supported) {
         setStatus('Este dispositivo inició RA, pero no ofrece detección de superficies WebXR.');
@@ -205,11 +266,17 @@ app.xr?.on('start', () => {
                 return;
             }
 
-            source.on('result', (position, rotation) => {
+            source.on('result', (position, rotation, _inputSource, hitTestResult) => {
                 latestPosition = position.clone();
                 latestRotation = rotation.clone();
+                latestHitResult = hitTestResult ?? null;
+
+                reticle.setPosition(position);
+                reticle.setRotation(rotation);
+                reticle.enabled = true;
+
                 if (!placed) {
-                    setStatus('Superficie detectada. Toca la pantalla para colocar la KTM.');
+                    setStatus('Superficie detectada. Toca el círculo para colocar la KTM.');
                 }
             });
         }
@@ -225,6 +292,9 @@ app.xr?.on('end', () => {
     placed = false;
     latestPosition = null;
     latestRotation = null;
+    latestHitResult = null;
+    reticle.enabled = false;
+    activeAnchor = null;
 });
 
 if (app.xr) {

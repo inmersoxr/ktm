@@ -11,6 +11,7 @@ import {
     GSplatHandler,
     RESOLUTION_AUTO,
     TextureHandler,
+    Quat,
     Vec3,
     XRSPACE_LOCALFLOOR,
     XRTYPE_AR,
@@ -119,6 +120,18 @@ let lastPointerY = 0;
 const touchPointers = new Map<number, { x: number; y: number }>();
 let pinchStartDistance = 0;
 let pinchStartCameraDistance = 0;
+let pinchLastCenterX = 0;
+let pinchLastCenterY = 0;
+
+const orbitWorldUp = new Vec3(0, 1, 0);
+const orbitCameraOffset = new Vec3();
+const orbitTargetOffset = new Vec3();
+const orbitPosition = new Vec3();
+const orbitLookTarget = new Vec3();
+const orbitForward = new Vec3();
+const orbitRightAxis = new Vec3();
+const orbitYawRotation = new Quat();
+const orbitPitchRotation = new Quat();
 let isControlKeyDown = false;
 let activeView = 0;
 let transition: { start: number; duration: number; from: CameraPose; to: CameraPose } | null = null;
@@ -490,6 +503,51 @@ const panTarget = (deltaX: number, deltaY: number) => {
     updateCamera();
 };
 
+// In camera-edit mode, orbit the complete camera framing around the motorcycle
+// center instead of orbiting around the current look-at point. This preserves
+// any composition offset while making the motorcycle rotate around its own
+// physical center rather than tracing a circle around an arbitrary target.
+const orbitAroundMotorcycle = (deltaX: number, deltaY: number) => {
+    if (!splatEntity) {
+        yaw -= deltaX * ORBIT_SENSITIVITY;
+        pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, pitch + deltaY * ORBIT_SENSITIVITY));
+        updateCamera();
+        return;
+    }
+
+    updateCameraPosition();
+
+    orbitCameraOffset.copy(cameraPosition).sub(splatCenter);
+    orbitTargetOffset.copy(target).sub(splatCenter);
+
+    const yawDelta = -deltaX * ORBIT_SENSITIVITY;
+    const pitchDelta = deltaY * ORBIT_SENSITIVITY;
+
+    orbitYawRotation.setFromAxisAngle(orbitWorldUp, yawDelta);
+    orbitYawRotation.transformVector(orbitCameraOffset, orbitCameraOffset);
+    orbitYawRotation.transformVector(orbitTargetOffset, orbitTargetOffset);
+
+    orbitPosition.copy(splatCenter).add(orbitCameraOffset);
+    orbitLookTarget.copy(splatCenter).add(orbitTargetOffset);
+    orbitForward.copy(orbitLookTarget).sub(orbitPosition).normalize();
+    orbitRightAxis.cross(orbitForward, orbitWorldUp).normalize();
+
+    if (orbitRightAxis.lengthSq() > 1e-8) {
+        orbitPitchRotation.setFromAxisAngle(orbitRightAxis, pitchDelta);
+        orbitPitchRotation.transformVector(orbitCameraOffset, orbitCameraOffset);
+        orbitPitchRotation.transformVector(orbitTargetOffset, orbitTargetOffset);
+    }
+
+    orbitPosition.copy(splatCenter).add(orbitCameraOffset);
+    orbitLookTarget.copy(splatCenter).add(orbitTargetOffset);
+
+    applyCameraPose({
+        position: [orbitPosition.x, orbitPosition.y, orbitPosition.z],
+        target: [orbitLookTarget.x, orbitLookTarget.y, orbitLookTarget.z],
+        fov
+    });
+};
+
 const getTouchPinchDistance = () => {
     const points = Array.from(touchPointers.values());
     if (points.length < 2) return 0;
@@ -509,11 +567,14 @@ canvas.addEventListener('pointerdown', (event) => {
             lastPointerX = event.clientX;
             lastPointerY = event.clientY;
         } else if (touchPointers.size === 2) {
-            // Two fingers switch from orbit to an absolute dolly gesture.
+            // Two fingers: pinch changes distance while centroid drag pans.
             dragMode = null;
             activePointerId = null;
             pinchStartDistance = getTouchPinchDistance();
             pinchStartCameraDistance = distance;
+            const points = Array.from(touchPointers.values());
+            pinchLastCenterX = (points[0].x + points[1].x) * 0.5;
+            pinchLastCenterY = (points[0].y + points[1].y) * 0.5;
         }
         return;
     }
@@ -538,11 +599,24 @@ canvas.addEventListener('pointermove', (event) => {
         touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
         if (touchPointers.size >= 2) {
+            const points = Array.from(touchPointers.values());
+            const currentCenterX = (points[0].x + points[1].x) * 0.5;
+            const currentCenterY = (points[0].y + points[1].y) * 0.5;
             const currentPinchDistance = getTouchPinchDistance();
+
             if (pinchStartDistance > 0 && currentPinchDistance > 0) {
                 distance = clampDistance(pinchStartCameraDistance * (pinchStartDistance / currentPinchDistance));
                 updateCamera();
             }
+
+            const panX = currentCenterX - pinchLastCenterX;
+            const panY = currentCenterY - pinchLastCenterY;
+            if (Math.abs(panX) > 0.01 || Math.abs(panY) > 0.01) {
+                panTarget(panX, panY);
+            }
+
+            pinchLastCenterX = currentCenterX;
+            pinchLastCenterY = currentCenterY;
             return;
         }
     }
@@ -560,9 +634,13 @@ canvas.addEventListener('pointermove', (event) => {
         distance = clampDistance(distance * (1 + deltaY * 0.012));
         updateCamera();
     } else {
-        yaw -= deltaX * ORBIT_SENSITIVITY;
-        pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, pitch + deltaY * ORBIT_SENSITIVITY));
-        updateCamera();
+        if (event.pointerType === 'touch' && editorOpen) {
+            orbitAroundMotorcycle(deltaX, deltaY);
+        } else {
+            yaw -= deltaX * ORBIT_SENSITIVITY;
+            pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, pitch + deltaY * ORBIT_SENSITIVITY));
+            updateCamera();
+        }
     }
 });
 
@@ -587,6 +665,8 @@ const endPointerDrag = (event: PointerEvent) => {
 
         pinchStartDistance = 0;
         pinchStartCameraDistance = distance;
+        pinchLastCenterX = 0;
+        pinchLastCenterY = 0;
         return;
     }
 

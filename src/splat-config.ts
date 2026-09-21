@@ -61,8 +61,8 @@ export const PRODUCT_VIEWS: ProductView[] = [
         number: 5,
         title: 'Motor LC4c 399 cc',
         description: 'Detalle del monocilíndrico LC4c de 398,7 cc, 45 PS y 39 Nm.',
-        position: [2.8659650360794737, 0.6097127777606907, 0.47111962759467496],
-        target: [1.75, 0.18, -1.12],
+        position: [2.868315531022465, 0.43412708597954286, 0.2411656768058119],
+        target: [1.6756127689684437, 0.24060954711632165, -1.1052526568155234],
         fov: 58
     },
     {
@@ -88,8 +88,8 @@ export const PRODUCT_VIEWS: ProductView[] = [
         number: 8,
         title: 'Chasis y parte ciclo',
         description: 'Detalle del bastidor, subchasis, basculante y arquitectura estructural de la moto.',
-        position: [3.05724272392482, 1.3144793668416264, 1.9715530241493908],
-        target: [1.8873453634684665, 0.9068415082429181, -0.983394640473237],
+        position: [1.277675503267833, 0.9375674625459804, -2.1539673348917545],
+        target: [1.8595303837529924, 0.9363021420135542, -0.9590198542411299],
         fov: 54
     }
 ];

@@ -137,7 +137,7 @@ let activeView = 0;
 let transition: { start: number; duration: number; from: CameraPose; to: CameraPose } | null = null;
 let splatEntity: Entity | null = null;
 let splatBounds: BoundingBox | undefined;
-const CAMERA_STORAGE_KEY = 'ktm-camera-views-v5';
+const CAMERA_STORAGE_KEY = 'ktm-camera-views-v6';
 
 const isFinitePose = (pose: Partial<CameraPose> | null | undefined): pose is CameraPose =>
     !!pose &&
@@ -848,7 +848,7 @@ splatAsset.on('load', () => {
 splatAsset.on('progress', (received: number, length: number) => {
     if (length > 0) {
         const progress = Math.max(0, Math.min(1, received / length));
-        setLoadingState(`Loading splat ${Math.floor(progress * 100)}%`, progress);
+        setLoadingState(`Loading KTM 390 ${Math.floor(progress * 100)}%`, progress);
     }
 });
 

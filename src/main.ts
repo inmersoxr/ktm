@@ -11,7 +11,6 @@ import {
     GSplatHandler,
     RESOLUTION_AUTO,
     TextureHandler,
-    Quat,
     Vec3,
     XRSPACE_LOCALFLOOR,
     XRTYPE_AR,
@@ -123,15 +122,8 @@ let pinchStartCameraDistance = 0;
 let pinchLastCenterX = 0;
 let pinchLastCenterY = 0;
 
-const orbitWorldUp = new Vec3(0, 1, 0);
-const orbitCameraOffset = new Vec3();
-const orbitTargetOffset = new Vec3();
-const orbitPosition = new Vec3();
-const orbitLookTarget = new Vec3();
-const orbitForward = new Vec3();
-const orbitRightAxis = new Vec3();
-const orbitYawRotation = new Quat();
-const orbitPitchRotation = new Quat();
+let splatPivot: Entity | null = null;
+let modelYaw = 0;
 let isControlKeyDown = false;
 let activeView = 0;
 let transition: { start: number; duration: number; from: CameraPose; to: CameraPose } | null = null;
@@ -267,6 +259,7 @@ const startViewTransition = (index: number) => {
     pressedKeys.clear();
     dragMode = null;
 
+    resetMotorcycleRotation();
     transition = { start: performance.now(), duration: 700, from: currentPose(), to: view };
     document.querySelectorAll<HTMLButtonElement>('.view-button').forEach((button, i) => button.classList.toggle('active', i === index));
     document.querySelector('#view-kicker')!.textContent = `${String(view.number).padStart(2, '0')} · EXPLORAR`;
@@ -503,49 +496,17 @@ const panTarget = (deltaX: number, deltaY: number) => {
     updateCamera();
 };
 
-// In camera-edit mode, orbit the complete camera framing around the motorcycle
-// center instead of orbiting around the current look-at point. This preserves
-// any composition offset while making the motorcycle rotate around its own
-// physical center rather than tracing a circle around an arbitrary target.
-const orbitAroundMotorcycle = (deltaX: number, deltaY: number) => {
-    if (!splatEntity) {
-        yaw -= deltaX * ORBIT_SENSITIVITY;
-        pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, pitch + deltaY * ORBIT_SENSITIVITY));
-        updateCamera();
-        return;
-    }
+// Manual rotation is model-only. The camera never orbits around an arbitrary
+// target: the motorcycle spins around a pivot located at its own physical center.
+const rotateMotorcycle = (deltaX: number) => {
+    if (!splatPivot) return;
+    modelYaw -= deltaX * ORBIT_SENSITIVITY;
+    splatPivot.setLocalEulerAngles(0, modelYaw, 0);
+};
 
-    updateCameraPosition();
-
-    orbitCameraOffset.copy(cameraPosition).sub(splatCenter);
-    orbitTargetOffset.copy(target).sub(splatCenter);
-
-    const yawDelta = -deltaX * ORBIT_SENSITIVITY;
-    const pitchDelta = deltaY * ORBIT_SENSITIVITY;
-
-    orbitYawRotation.setFromAxisAngle(orbitWorldUp, yawDelta);
-    orbitYawRotation.transformVector(orbitCameraOffset, orbitCameraOffset);
-    orbitYawRotation.transformVector(orbitTargetOffset, orbitTargetOffset);
-
-    orbitPosition.copy(splatCenter).add(orbitCameraOffset);
-    orbitLookTarget.copy(splatCenter).add(orbitTargetOffset);
-    orbitForward.copy(orbitLookTarget).sub(orbitPosition).normalize();
-    orbitRightAxis.cross(orbitForward, orbitWorldUp).normalize();
-
-    if (orbitRightAxis.lengthSq() > 1e-8) {
-        orbitPitchRotation.setFromAxisAngle(orbitRightAxis, pitchDelta);
-        orbitPitchRotation.transformVector(orbitCameraOffset, orbitCameraOffset);
-        orbitPitchRotation.transformVector(orbitTargetOffset, orbitTargetOffset);
-    }
-
-    orbitPosition.copy(splatCenter).add(orbitCameraOffset);
-    orbitLookTarget.copy(splatCenter).add(orbitTargetOffset);
-
-    applyCameraPose({
-        position: [orbitPosition.x, orbitPosition.y, orbitPosition.z],
-        target: [orbitLookTarget.x, orbitLookTarget.y, orbitLookTarget.z],
-        fov
-    });
+const resetMotorcycleRotation = () => {
+    modelYaw = 0;
+    splatPivot?.setLocalEulerAngles(0, 0, 0);
 };
 
 const getTouchPinchDistance = () => {
@@ -634,13 +595,7 @@ canvas.addEventListener('pointermove', (event) => {
         distance = clampDistance(distance * (1 + deltaY * 0.012));
         updateCamera();
     } else {
-        if (event.pointerType === 'touch' && editorOpen) {
-            orbitAroundMotorcycle(deltaX, deltaY);
-        } else {
-            yaw -= deltaX * ORBIT_SENSITIVITY;
-            pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, pitch + deltaY * ORBIT_SENSITIVITY));
-            updateCamera();
-        }
+        rotateMotorcycle(deltaX);
     }
 });
 
@@ -692,13 +647,6 @@ canvas.addEventListener(
 
         if (event.shiftKey) {
             panTarget(event.deltaX, event.deltaY);
-            return;
-        }
-
-        if (event.ctrlKey && isControlKeyDown) {
-            yaw -= event.deltaX * TRACKPAD_ORBIT_SENSITIVITY;
-            pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, pitch + event.deltaY * TRACKPAD_ORBIT_SENSITIVITY));
-            updateCamera();
             return;
         }
 
@@ -833,6 +781,17 @@ splatAsset.on('load', () => {
     if (aabb) splat.getWorldTransform().transformPoint(aabb.center, splatCenter);
     else splatCenter.set(0, 0, 0);
 
+    // Put the Gaussian under a pivot at its actual center. Rotating this parent
+    // keeps the motorcycle center fixed in world space, so it can only spin on
+    // its own vertical axis and can never trace a circle around another pivot.
+    const pivot = new Entity('SplatPivot');
+    pivot.setPosition(splatCenter);
+    app.root.addChild(pivot);
+    splat.reparent(pivot);
+    splat.setLocalPosition(-splatCenter.x, -splatCenter.y, -splatCenter.z);
+    splatPivot = pivot;
+    modelYaw = 0;
+
     // scene radius scales zoom/pan limits even when the authored pose wins
     if (aabb) {
         sceneRadius = Math.max(aabb.halfExtents.length(), MIN_SCENE_RADIUS);
@@ -854,7 +813,7 @@ splatAsset.on('progress', (received: number, length: number) => {
 
 splatAsset.on('error', (error: unknown) => {
     console.error(error);
-    setLoadingState('Failed to load splat.', 1, true);
+    setLoadingState('Failed to load KTM 390.', 1, true);
 });
 
 app.assets.add(splatAsset);

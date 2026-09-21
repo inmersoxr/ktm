@@ -14,6 +14,7 @@ import {
     XRSPACE_LOCALFLOOR,
     XRSPACE_VIEWER,
     XRTYPE_AR,
+    XrManager,
     createGraphicsDevice
 } from 'playcanvas';
 import type { BoundingBox, Quat, Vec3 } from 'playcanvas';
@@ -97,6 +98,7 @@ device.maxPixelRatio = Math.min(window.devicePixelRatio, 2);
 
 const options = new AppOptions();
 options.graphicsDevice = device;
+options.xr = XrManager;
 options.componentSystems = [CameraComponentSystem, GSplatComponentSystem];
 options.resourceHandlers = [TextureHandler, GSplatHandler];
 

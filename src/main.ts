@@ -121,10 +121,37 @@ let activeView = 0;
 let transition: { start: number; duration: number; from: CameraPose; to: CameraPose } | null = null;
 let splatEntity: Entity | null = null;
 let splatBounds: BoundingBox | undefined;
-let views: ProductView[] = PRODUCT_VIEWS.map((view) => ({ ...view }));
+const CAMERA_STORAGE_KEY = 'ktm-camera-views-v3';
 
-// Production always uses the camera poses bundled with this deployment.
-// Editor/localStorage data must never override the public tour.
+const isFinitePose = (pose: Partial<CameraPose> | null | undefined): pose is CameraPose =>
+    !!pose &&
+    Array.isArray(pose.position) &&
+    pose.position.length === 3 &&
+    pose.position.every(Number.isFinite) &&
+    Array.isArray(pose.target) &&
+    pose.target.length === 3 &&
+    pose.target.every(Number.isFinite) &&
+    Number.isFinite(pose.fov);
+
+const loadSavedViews = (): ProductView[] => {
+    try {
+        const raw = localStorage.getItem(CAMERA_STORAGE_KEY);
+        if (!raw) return PRODUCT_VIEWS.map((view) => ({ ...view }));
+        const saved = JSON.parse(raw) as ProductView[];
+        if (!Array.isArray(saved)) return PRODUCT_VIEWS.map((view) => ({ ...view }));
+
+        return PRODUCT_VIEWS.map((base) => {
+            const override = saved.find((item) => item?.id === base.id);
+            return override && isFinitePose(override)
+                ? { ...base, position: [...override.position] as [number, number, number], target: [...override.target] as [number, number, number], fov: override.fov }
+                : { ...base };
+        });
+    } catch {
+        return PRODUCT_VIEWS.map((view) => ({ ...view }));
+    }
+};
+
+let views: ProductView[] = loadSavedViews();
 
 const updateCameraPosition = () => {
     const yawRad = (yaw * Math.PI) / 180;
@@ -203,21 +230,33 @@ const focusMotorcycle = (frame = false) => {
     updateCamera();
 };
 
-const currentPose = (): CameraPose => ({
-    position: [cameraPosition.x, cameraPosition.y, cameraPosition.z],
-    target: [target.x, target.y, target.z],
-    fov
-});
+const currentPose = (): CameraPose => {
+    updateCameraPosition();
+    return {
+        position: [cameraPosition.x, cameraPosition.y, cameraPosition.z],
+        target: [target.x, target.y, target.z],
+        fov
+    };
+};
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const startViewTransition = (index: number) => {
     activeView = index;
     const view = views[index];
-    transition = { start: performance.now(), duration: 1150, from: currentPose(), to: view };
+
+    // Presets are absolute world-space poses. Clear any residual navigation
+    // state so the destination never depends on where the user was before.
+    flyVelocity.set(0, 0, 0);
+    desiredMove.set(0, 0, 0);
+    pressedKeys.clear();
+    dragMode = null;
+
+    transition = { start: performance.now(), duration: 700, from: currentPose(), to: view };
     document.querySelectorAll<HTMLButtonElement>('.view-button').forEach((button, i) => button.classList.toggle('active', i === index));
     document.querySelector('#view-kicker')!.textContent = `${String(view.number).padStart(2, '0')} · EXPLORAR`;
     document.querySelector('#view-title')!.textContent = view.title;
     document.querySelector('#view-description')!.textContent = view.description;
+    updateEditorLabel();
 };
 
 const viewNav = document.querySelector<HTMLElement>('#view-nav');
@@ -229,6 +268,143 @@ views.forEach((view, index) => {
     button.addEventListener('click', () => startViewTransition(index));
     viewNav?.appendChild(button);
 });
+
+let editorOpen = false;
+const headerActions = document.querySelector<HTMLElement>('.header-actions');
+const editorToggle = document.createElement('button');
+editorToggle.id = 'camera-editor-toggle';
+editorToggle.type = 'button';
+editorToggle.textContent = 'Ajustar vistas';
+headerActions?.prepend(editorToggle);
+
+const editorPanel = document.createElement('div');
+editorPanel.id = 'camera-editor';
+editorPanel.innerHTML = `
+    <div id="camera-editor-label"></div>
+    <div class="camera-editor-actions">
+        <button id="camera-save-view" type="button">Guardar esta vista</button>
+        <button id="camera-copy-views" type="button">Copiar poses</button>
+        <button id="camera-reset-views" type="button">Restaurar</button>
+        <button id="camera-editor-done" type="button">Listo</button>
+    </div>
+    <div id="camera-editor-note">Mueve la cámara, selecciona una vista y guarda su posición. Las vistas guardadas son absolutas.</div>
+`;
+document.body.appendChild(editorPanel);
+
+const editorStyle = document.createElement('style');
+editorStyle.textContent = `
+#camera-editor-toggle {
+    border: 1px solid rgb(255 255 255 / 18%);
+    border-radius: 999px;
+    padding: 10px 15px;
+    background: rgb(10 12 15 / 72%);
+    color: #fff;
+    cursor: pointer;
+}
+#camera-editor {
+    position: fixed;
+    z-index: 20;
+    left: 50%;
+    bottom: 22px;
+    display: none;
+    width: min(680px, calc(100vw - 28px));
+    transform: translateX(-50%);
+    box-sizing: border-box;
+    padding: 14px;
+    border: 1px solid rgb(255 255 255 / 18%);
+    border-radius: 14px;
+    background: rgb(8 10 14 / 90%);
+    backdrop-filter: blur(18px);
+}
+body.camera-editing #camera-editor { display: block; }
+#camera-editor-label { margin-bottom: 10px; font-weight: 800; }
+.camera-editor-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.camera-editor-actions button {
+    border: 1px solid rgb(255 255 255 / 18%);
+    border-radius: 999px;
+    padding: 10px 13px;
+    background: rgb(255 255 255 / 8%);
+    color: #fff;
+}
+#camera-save-view, #camera-editor-done { background: #ff5a18; color: #111; font-weight: 850; }
+#camera-editor-note { margin-top: 9px; color: rgb(255 255 255 / 62%); font-size: 12px; line-height: 1.35; }
+body.camera-editing #view-copy { opacity: .28; }
+@media (max-width: 520px) {
+    #camera-editor-toggle { padding: 9px 11px; font-size: 11px; }
+    body.camera-editing #view-nav { bottom: 190px; }
+    #camera-editor { bottom: 12px; }
+    .camera-editor-actions button { flex: 1 1 44%; }
+}
+`;
+document.head.appendChild(editorStyle);
+
+const editorLabel = editorPanel.querySelector<HTMLDivElement>('#camera-editor-label');
+const updateEditorLabel = () => {
+    if (editorLabel) {
+        const view = views[activeView];
+        editorLabel.textContent = `Editando ${String(view.number).padStart(2, '0')} · ${view.title}`;
+    }
+};
+
+const saveViews = () => {
+    localStorage.setItem(CAMERA_STORAGE_KEY, JSON.stringify(views));
+};
+
+const saveCurrentView = () => {
+    const pose = currentPose();
+    const current = views[activeView];
+    views[activeView] = {
+        ...current,
+        position: [...pose.position] as [number, number, number],
+        target: [...pose.target] as [number, number, number],
+        fov: pose.fov
+    };
+    saveViews();
+    applyCameraPose(views[activeView]);
+    updateEditorLabel();
+    const note = editorPanel.querySelector<HTMLDivElement>('#camera-editor-note');
+    if (note) note.textContent = `Vista ${String(current.number).padStart(2, '0')} guardada exactamente en esta posición.`;
+};
+
+editorToggle.addEventListener('click', () => {
+    editorOpen = !editorOpen;
+    document.body.classList.toggle('camera-editing', editorOpen);
+    editorToggle.textContent = editorOpen ? 'Cerrar edición' : 'Ajustar vistas';
+    updateEditorLabel();
+});
+
+editorPanel.querySelector<HTMLButtonElement>('#camera-save-view')?.addEventListener('click', saveCurrentView);
+
+editorPanel.querySelector<HTMLButtonElement>('#camera-editor-done')?.addEventListener('click', () => {
+    saveCurrentView();
+    editorOpen = false;
+    document.body.classList.remove('camera-editing');
+    editorToggle.textContent = 'Ajustar vistas';
+});
+
+editorPanel.querySelector<HTMLButtonElement>('#camera-reset-views')?.addEventListener('click', () => {
+    localStorage.removeItem(CAMERA_STORAGE_KEY);
+    views = PRODUCT_VIEWS.map((view) => ({ ...view }));
+    applyCameraPose(views[activeView]);
+    updateEditorLabel();
+    const note = editorPanel.querySelector<HTMLDivElement>('#camera-editor-note');
+    if (note) note.textContent = 'Poses restauradas a los valores publicados.';
+});
+
+editorPanel.querySelector<HTMLButtonElement>('#camera-copy-views')?.addEventListener('click', async () => {
+    const payload = JSON.stringify(views, null, 2);
+    try {
+        await navigator.clipboard.writeText(payload);
+        const note = editorPanel.querySelector<HTMLDivElement>('#camera-editor-note');
+        if (note) note.textContent = 'Poses copiadas. Puedes pegármelas para dejarlas publicadas para todos los dispositivos.';
+    } catch {
+        console.log(payload);
+        const note = editorPanel.querySelector<HTMLDivElement>('#camera-editor-note');
+        if (note) note.textContent = 'No pude copiar automáticamente; las poses quedaron impresas en la consola.';
+    }
+});
+
+updateEditorLabel();
 
 const xrButton = document.querySelector<HTMLButtonElement>('#xr-button');
 const setArTransform = () => {
@@ -425,7 +601,8 @@ app.on('destroy', () => {
     window.removeEventListener('resize', resize);
 });
 
-if (!CAMERA_POSE || !applyCameraPose(CAMERA_POSE)) {
+const initialPose = views[0] ?? CAMERA_POSE;
+if (!initialPose || !applyCameraPose(initialPose)) {
     setDefaultFrame();
 }
 
@@ -440,7 +617,10 @@ app.on('update', (dt) => {
             target: [lerp(from.target[0], to.target[0], t), lerp(from.target[1], to.target[1], t), lerp(from.target[2], to.target[2], t)],
             fov: lerp(from.fov, to.fov, t)
         });
-        if (raw >= 1) transition = null;
+        if (raw >= 1) {
+            applyCameraPose(to);
+            transition = null;
+        }
         return;
     }
     desiredMove.set(0, 0, 0);
@@ -513,10 +693,9 @@ splatAsset.on('load', () => {
         sceneRadius = Math.max(aabb.halfExtents.length(), MIN_SCENE_RADIUS);
     }
 
-    if (!CAMERA_POSE || !applyCameraPose(CAMERA_POSE)) {
+    const initialPose = views[0] ?? CAMERA_POSE;
+    if (!initialPose || !applyCameraPose(initialPose)) {
         frameSplat(splat, aabb);
-    } else {
-        focusMotorcycle();
     }
     hideLoader();
 });

@@ -15,6 +15,9 @@ import {
     TextureHandler,
     XRSPACE_LOCALFLOOR,
     XRSPACE_VIEWER,
+    XRTRACKABLE_PLANE,
+    XRTRACKABLE_POINT,
+    XRTARGETRAY_SCREEN,
     XRTYPE_AR,
     XrManager,
     createGraphicsDevice
@@ -135,7 +138,7 @@ reticle.addComponent('render', {
     castShadows: false,
     receiveShadows: false
 });
-reticle.setLocalScale(0.34, 0.035, 0.34);
+reticle.setLocalScale(0.10, 0.012, 0.10);
 const reticleMaterial = new StandardMaterial();
 reticleMaterial.diffuse = new Color(1, 0.22, 0);
 reticleMaterial.emissive = new Color(1, 0.12, 0);
@@ -153,6 +156,7 @@ let latestPosition: Vec3 | null = null;
 let latestRotation: Quat | null = null;
 let latestHitResult: any = null;
 let activeAnchor: any = null;
+let activeHitTestSource: any = null;
 
 const filename = SPLAT_URL.split('/').pop() || 'splat';
 const splatAsset = new Asset('KTM Duke 390', 'gsplat', {
@@ -173,12 +177,15 @@ splatAsset.on('load', () => {
         const capturedLength = Math.max(size.x, size.y, size.z);
         const scale = 2.05 / Math.max(capturedLength, 0.001);
         const center = splatBounds.center;
-        const groundY = center.y - splatBounds.halfExtents.y;
+        // The splat is rotated 180° around Z below. That flips its Y axis.
+        // Therefore the original +Y bound becomes the physical bottom after
+        // rotation. Align that exact contact point with modelRoot origin.
+        const contactY = center.y + splatBounds.halfExtents.y;
 
         splat.setLocalScale(scale, scale, scale);
         splat.setLocalPosition(
             center.x * scale,
-            groundY * scale,
+            contactY * scale,
             -center.z * scale
         );
     }
@@ -197,50 +204,67 @@ splatAsset.on('error', (error: unknown) => {
 app.assets.add(splatAsset);
 app.assets.load(splatAsset);
 
-const applyPlacementPose = () => {
-    if (!latestPosition) return;
-    modelRoot.setPosition(latestPosition);
-    if (latestRotation) {
-        modelRoot.setRotation(latestRotation);
+const applyPlacementPose = (position: Vec3, rotation: Quat | null) => {
+    modelRoot.setPosition(position);
+    if (rotation) {
+        modelRoot.setRotation(rotation);
     }
 };
 
 const placeAtLatestHit = () => {
-    if (!latestPosition || !splatEntity) return;
+    if (placed || !latestPosition || !splatEntity || !latestHitResult) return;
 
-    if (activeAnchor) {
-        activeAnchor.destroy();
-        activeAnchor = null;
-    }
-
-    applyPlacementPose();
-    modelRoot.enabled = true;
-    placed = true;
-    setStatus('KTM colocada. Muévete alrededor: debe permanecer fija en ese punto.');
-
+    // Freeze the exact hit pose represented by the visible reticle.
+    const position = latestPosition.clone();
+    const rotation = latestRotation?.clone() ?? null;
     const hitResult = latestHitResult;
-    if (!hitResult || !app.xr?.anchors.available) {
+
+    placed = true;
+    reticle.enabled = false;
+
+    // Once placed, the preview hit-test must stop. The reticle must not keep
+    // moving and no later hit result may replace the selected physical point.
+    activeHitTestSource?.remove();
+    activeHitTestSource = null;
+
+    applyPlacementPose(position, rotation);
+    modelRoot.enabled = true;
+    setStatus('KTM colocada.');
+
+    // Create the anchor from the same XRHitTestResult used by the reticle.
+    // This is the PlayCanvas/WebXR reference implementation path for stable
+    // placement against evolving ARCore world tracking.
+    if (!app.xr?.anchors.available) {
+        setStatus('KTM colocada, pero WebXR no habilitó Anchors en esta sesión.');
         return;
     }
 
     app.xr.anchors.create(hitResult, (error, anchor) => {
         if (error || !anchor) {
             console.error(error);
+            setStatus('KTM colocada, pero no se pudo crear el anchor.');
             return;
         }
 
         activeAnchor = anchor;
+
         const syncToAnchor = () => {
             if (activeAnchor !== anchor) return;
             modelRoot.setPosition(anchor.getPosition());
             modelRoot.setRotation(anchor.getRotation());
         };
 
+        // The callback is issued after the first valid anchor pose exists.
+        syncToAnchor();
         anchor.on('change', syncToAnchor);
+        anchor.once('destroy', () => {
+            if (activeAnchor === anchor) activeAnchor = null;
+        });
     });
 };
 
-app.xr?.input.on('select', () => {
+app.xr?.input.on('select', (inputSource) => {
+    if ((inputSource as any).targetRayMode !== XRTARGETRAY_SCREEN) return;
     placeAtLatestHit();
 });
 
@@ -249,35 +273,47 @@ app.xr?.on('start', () => {
     startButton.hidden = true;
     backButton.hidden = true;
     reticle.enabled = false;
+    latestPosition = null;
+    latestRotation = null;
     latestHitResult = null;
+    placed = false;
     setStatus('Mueve el teléfono lentamente y apunta a una superficie plana.');
+});
 
-    if (!app.xr?.hitTest.supported) {
-        setStatus('Este dispositivo inició RA, pero no ofrece detección de superficies WebXR.');
-        return;
-    }
+app.xr?.hitTest.on('available', () => {
+    if (placed || activeHitTestSource || !app.xr?.hitTest.supported) return;
 
+    // Match the official PlayCanvas mobile AR hit-test flow: a viewer-space
+    // ray continuously drives a placement reticle over detected planes/points.
     app.xr.hitTest.start({
         spaceType: XRSPACE_VIEWER,
+        entityTypes: [XRTRACKABLE_PLANE, XRTRACKABLE_POINT],
         callback: (error, source) => {
             if (error || !source) {
                 console.error(error);
-                setStatus('No se pudo iniciar la detección del piso.');
+                setStatus('No se pudo iniciar la detección de superficies.');
                 return;
             }
 
+            activeHitTestSource = source;
+
             source.on('result', (position, rotation, _inputSource, hitTestResult) => {
+                if (placed) return;
+
                 latestPosition = position.clone();
                 latestRotation = rotation.clone();
                 latestHitResult = hitTestResult ?? null;
 
-                reticle.setPosition(position);
-                reticle.setRotation(rotation);
+                // The reticle and the eventual model placement use the exact
+                // same world-space transform.
+                reticle.setPosition(latestPosition);
+                reticle.setRotation(latestRotation);
                 reticle.enabled = true;
+                setStatus('Superficie detectada. Toca el aro para colocar la KTM.');
+            });
 
-                if (!placed) {
-                    setStatus('Superficie detectada. Toca el círculo para colocar la KTM.');
-                }
+            source.once('remove', () => {
+                if (activeHitTestSource === source) activeHitTestSource = null;
             });
         }
     });
@@ -294,7 +330,12 @@ app.xr?.on('end', () => {
     latestRotation = null;
     latestHitResult = null;
     reticle.enabled = false;
-    activeAnchor = null;
+    activeHitTestSource?.remove();
+    activeHitTestSource = null;
+    if (activeAnchor) {
+        activeAnchor.destroy();
+        activeAnchor = null;
+    }
 });
 
 if (app.xr) {

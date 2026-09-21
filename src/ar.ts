@@ -41,7 +41,14 @@ const setStatus = (message: string) => {
 };
 
 backButton.addEventListener('click', () => {
-    window.location.href = './';
+    const xr = arApp?.xr;
+    if (xr?.active) {
+        xr.end(() => {
+            window.location.href = './';
+        });
+    } else {
+        window.location.href = './';
+    }
 });
 
 // Register the user-action handler before graphics/model initialization.
@@ -157,6 +164,44 @@ let latestRotation: Quat | null = null;
 let latestHitResult: any = null;
 let activeAnchor: any = null;
 let activeHitTestSource: any = null;
+let userScale = 1;
+let pinchStartDistance: number | null = null;
+let pinchStartScale = 1;
+
+const touchDistance = (touches: TouchList) => {
+    const a = touches[0];
+    const b = touches[1];
+    return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
+};
+
+arUi.style.touchAction = 'none';
+
+arUi.addEventListener('touchstart', (event) => {
+    if (!placed || event.touches.length !== 2) return;
+    pinchStartDistance = touchDistance(event.touches);
+    pinchStartScale = userScale;
+    event.preventDefault();
+}, { passive: false });
+
+arUi.addEventListener('touchmove', (event) => {
+    if (!placed || event.touches.length !== 2 || pinchStartDistance === null) return;
+
+    const distance = touchDistance(event.touches);
+    const ratio = distance / Math.max(pinchStartDistance, 1);
+    userScale = Math.min(4, Math.max(0.15, pinchStartScale * ratio));
+    modelRoot.setLocalScale(userScale, userScale, userScale);
+    setStatus(`Tamaño: ${Math.round(userScale * 100)}%. Pellizca con dos dedos para ajustarlo.`);
+    event.preventDefault();
+}, { passive: false });
+
+const endPinch = (event: TouchEvent) => {
+    if (event.touches.length < 2) {
+        pinchStartDistance = null;
+    }
+};
+
+arUi.addEventListener('touchend', endPinch, { passive: true });
+arUi.addEventListener('touchcancel', endPinch, { passive: true });
 
 const filename = SPLAT_URL.split('/').pop() || 'splat';
 const splatAsset = new Asset('KTM Duke 390', 'gsplat', {
@@ -229,7 +274,7 @@ const placeAtLatestHit = () => {
 
     applyPlacementPose(position, rotation);
     modelRoot.enabled = true;
-    setStatus('KTM colocada.');
+    setStatus('KTM colocada. Pellizca con dos dedos para ajustar el tamaño.');
 
     // Create the anchor from the same XRHitTestResult used by the reticle.
     // This is the PlayCanvas/WebXR reference implementation path for stable
@@ -271,12 +316,16 @@ app.xr?.input.on('select', (inputSource) => {
 app.xr?.on('start', () => {
     document.body.classList.add('xr-active');
     startButton.hidden = true;
-    backButton.hidden = true;
+    backButton.hidden = false;
+    arUi.style.pointerEvents = 'auto';
     reticle.enabled = false;
     latestPosition = null;
     latestRotation = null;
     latestHitResult = null;
     placed = false;
+    userScale = 1;
+    pinchStartDistance = null;
+    modelRoot.setLocalScale(1, 1, 1);
     setStatus('Mueve el teléfono lentamente y apunta a una superficie plana.');
 });
 
@@ -323,8 +372,12 @@ app.xr?.on('end', () => {
     document.body.classList.remove('xr-active');
     startButton.hidden = false;
     backButton.hidden = false;
+    arUi.style.pointerEvents = '';
     setStatus('Sesión RA finalizada.');
     modelRoot.enabled = false;
+    modelRoot.setLocalScale(1, 1, 1);
+    userScale = 1;
+    pinchStartDistance = null;
     placed = false;
     latestPosition = null;
     latestRotation = null;

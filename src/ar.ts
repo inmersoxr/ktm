@@ -151,7 +151,7 @@ let splatBounds: BoundingBox | undefined;
 let placed = false;
 let latestPosition: Vec3 | null = null;
 let latestRotation: Quat | null = null;
-let latestHitResult: XRHitTestResult | null = null;
+let latestHitResult: any = null;
 let activeAnchor: any = null;
 
 const filename = SPLAT_URL.split('/').pop() || 'splat';

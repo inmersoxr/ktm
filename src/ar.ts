@@ -37,6 +37,57 @@ backButton.addEventListener('click', () => {
     window.location.href = './';
 });
 
+// Register the user-action handler before graphics/model initialization.
+// This keeps the button alive even if the AR renderer fails during startup.
+let arApp: AppBase | null = null;
+let arCamera: Entity | null = null;
+let bootstrapError: string | null = null;
+
+window.addEventListener('error', (event) => {
+    bootstrapError = event.message || 'Error de inicialización';
+    setStatus(`Error de RA: ${bootstrapError}`);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason instanceof Error ? event.reason.message : String(event.reason);
+    bootstrapError = reason;
+    setStatus(`Error de RA: ${reason}`);
+});
+
+const startAr = () => {
+    if (bootstrapError) {
+        setStatus(`Error de RA: ${bootstrapError}`);
+        return;
+    }
+
+    if (!arApp || !arCamera?.camera || !arApp.xr) {
+        setStatus('La RA todavía se está inicializando. Espera un segundo y vuelve a tocar.');
+        return;
+    }
+
+    setStatus('Solicitando sesión RA…');
+
+    // PlayCanvas 2.20 gates start() on its cached availability flag before
+    // calling navigator.xr.requestSession(). Force only that cache entry so
+    // the browser itself becomes the authority. This route is isolated from
+    // the WebGPU product viewer.
+    const xr = arApp.xr as typeof arApp.xr & { _available?: Record<string, boolean> };
+    if (xr._available) xr._available[XRTYPE_AR] = true;
+
+    xr.start(arCamera.camera, XRTYPE_AR, XRSPACE_LOCALFLOOR, {
+        callback: (error) => {
+            if (error) {
+                console.error(error);
+                const name = error instanceof DOMException ? error.name : 'Error';
+                const message = error instanceof Error ? error.message : String(error);
+                setStatus(`${name}: ${message}`);
+            }
+        }
+    });
+};
+
+startButton.addEventListener('click', startAr);
+
 const device = await createGraphicsDevice(canvas, {
     deviceTypes: [DEVICETYPE_WEBGL2],
     antialias: false,
@@ -50,12 +101,14 @@ options.componentSystems = [CameraComponentSystem, GSplatComponentSystem];
 options.resourceHandlers = [TextureHandler, GSplatHandler];
 
 const app = new AppBase(canvas);
+arApp = app;
 app.init(options);
 app.setCanvasFillMode(FILLMODE_FILL_WINDOW);
 app.setCanvasResolution(RESOLUTION_AUTO);
 app.start();
 
 const camera = new Entity('AR Camera');
+arCamera = camera;
 camera.addComponent('camera', {
     clearColor: new Color(0, 0, 0, 0),
     fov: 70
@@ -171,29 +224,6 @@ app.xr?.on('end', () => {
     latestPosition = null;
     latestRotation = null;
 });
-
-const startAr = () => {
-    if (!camera.camera || !app.xr) {
-        setStatus('No se pudo inicializar WebXR.');
-        return;
-    }
-
-    setStatus('Iniciando RA…');
-
-    // Do not block the user gesture on PlayCanvas' cached availability flag.
-    // The authoritative test is the immersive-ar session request itself.
-    app.xr.start(camera.camera, XRTYPE_AR, XRSPACE_LOCALFLOOR, {
-        callback: (error) => {
-            if (error) {
-                console.error(error);
-                const message = error instanceof Error ? error.message : String(error);
-                setStatus(`WebXR rechazó la sesión RA: ${message}`);
-            }
-        }
-    });
-};
-
-startButton.addEventListener('click', startAr);
 
 if (app.xr) {
     const syncAvailability = () => {

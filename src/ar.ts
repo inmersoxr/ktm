@@ -78,6 +78,26 @@ let arApp: AppBase | null = null;
 let arCamera: Entity | null = null;
 let bootstrapError: string | null = null;
 
+const nativeXr = (navigator as any).xr;
+const hasNativeWebXr = !!nativeXr && typeof nativeXr.requestSession === 'function';
+const isAndroid = /Android/i.test(navigator.userAgent);
+
+const openInChrome = () => {
+    const url = new URL(window.location.href);
+    const target = `${url.host}${url.pathname}${url.search}`;
+    window.location.href = `intent://${target}#Intent;scheme=https;package=com.android.chrome;end`;
+};
+
+if (!hasNativeWebXr) {
+    if (isAndroid) {
+        setStatus('Este navegador interno no ofrece WebXR. Abre la experiencia en Chrome.');
+        startButton.textContent = 'Abrir en Chrome';
+    } else {
+        setStatus('Este navegador no ofrece WebXR para esta experiencia.');
+        startButton.textContent = 'RA no disponible';
+    }
+}
+
 window.addEventListener('error', (event) => {
     bootstrapError = event.message || 'Error de inicialización';
     setStatus(`Error de RA: ${bootstrapError}`);
@@ -90,6 +110,19 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 const startAr = () => {
+    // Embedded browsers such as the Instagram browser can omit navigator.xr
+    // entirely even on an AR-capable Android phone. Never force PlayCanvas
+    // past that capability boundary: redirect from a real user tap instead.
+    if (!hasNativeWebXr) {
+        if (isAndroid) {
+            setStatus('Abriendo la experiencia en Chrome…');
+            openInChrome();
+        } else {
+            setStatus('Este navegador no ofrece WebXR para esta experiencia.');
+        }
+        return;
+    }
+
     if (bootstrapError) {
         setStatus(`Error de RA: ${bootstrapError}`);
         return;
@@ -102,10 +135,10 @@ const startAr = () => {
 
     setStatus('Solicitando sesión RA…');
 
-    // PlayCanvas 2.20 gates start() on its cached availability flag before
-    // calling navigator.xr.requestSession(). Force only that cache entry so
-    // the browser itself becomes the authority. This route is isolated from
-    // the WebGPU product viewer.
+    // PlayCanvas 2.20 can lag behind the browser's own XR availability state.
+    // Only bypass its cached flag after confirming that navigator.xr and
+    // requestSession actually exist. This preserves the working Android path
+    // without crashing inside embedded browsers that expose no WebXR API.
     const xr = arApp.xr as any;
     if (xr._available) xr._available[XRTYPE_AR] = true;
 

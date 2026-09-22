@@ -15,6 +15,20 @@
         #ar-back { background:rgba(255,255,255,.9); color:#111; }
         #ar-start { align-self:center; background:#ff5a00; color:#fff; padding:15px 24px; }
         body.xr-active #ar-ui { pointer-events:none; }
+
+        #ar-guide { pointer-events:auto; width:min(440px,calc(100vw - 36px)); box-sizing:border-box; align-self:center; margin-top:auto; margin-bottom:12px; padding:16px 18px; border:1px solid rgba(255,255,255,.18); border-radius:16px; background:rgba(17,20,24,.96); box-shadow:0 12px 36px rgba(0,0,0,.5); color:#fff; max-height:min(64vh,550px); overflow-y:auto; }
+        #ar-guide[hidden], #ar-guide-link[hidden], #ar-guide-settings[hidden], #ar-chrome-steps[hidden] { display:none!important; }
+        #ar-guide h2 { margin:0 0 8px; font-size:19px; line-height:1.2; }
+        #ar-guide p, #ar-guide li { font-size:13px; line-height:1.5; }
+        #ar-guide p { margin:0 0 9px; color:#e5e7eb; }
+        #ar-guide ol { margin:8px 0 12px; padding-left:20px; }
+        #ar-guide li + li { margin-top:6px; }
+        #ar-guide-link { display:block; text-decoration:none; border-radius:999px; padding:12px 15px; margin-top:12px; text-align:center; background:#fff; color:#121212; font-weight:750; font-size:14px; }
+        #ar-guide-settings { display:block; margin:9px auto 0; background:transparent; color:#fff; border:1px solid rgba(255,255,255,.3); width:100%; }
+        #ar-chrome-steps { padding:12px 10px 2px; border-top:1px solid rgba(255,255,255,.15); margin-top:12px; }
+        #ar-start { flex-shrink:0; }
+        body.xr-active #ar-guide { display:none; }
+        @media (max-width:520px) { #ar-guide {padding:13px 15px; max-height:57vh;} #ar-guide h2 {font-size:17px;} }
         body.xr-active #ar-status { margin:0 auto; }
     </style>
 </head>
@@ -25,6 +39,23 @@
             <div id="ar-status">Cargando motocicleta…</div>
             <button id="ar-back" type="button">Volver</button>
         </div>
+
+        <section id="ar-guide" aria-live="polite" hidden>
+            <h2 id="ar-guide-heading"></h2>
+            <p id="ar-guide-message"></p>
+            <ol id="ar-guide-steps"></ol>
+            <a id="ar-guide-link" hidden></a>
+            <button id="ar-guide-settings" type="button" hidden>Cómo revisar Chrome y sus permisos</button>
+            <div id="ar-chrome-steps" hidden>
+                <p><strong>Revisa estas configuraciones en Chrome:</strong></p>
+                <ol>
+                    <li>Menú ⋮ → Configuración → Configuración de sitios → Cámara: permite la cámara para esta página.</li>
+                    <li>Si este sitio está bloqueado, selecciónalo y restablece sus permisos.</li>
+                    <li>En Android: Ajustes → Aplicaciones → Chrome → Permisos → Cámara.</li>
+                    <li>Si desactivaste WebXR manualmente en chrome://flags, restablece esa configuración y reinicia Chrome.</li>
+                </ol>
+            </div>
+        </section>
         <button id="ar-start" type="button">Iniciar RA</button>
     </div>
     <script type="module" src="/src/ar.ts"></script>

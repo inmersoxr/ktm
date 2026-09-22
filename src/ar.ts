@@ -211,7 +211,7 @@ const touchDistance = (touches: TouchList) => {
     return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
 };
 
-arUi.style.touchAction = 'none';
+arUi.style.touchAction = 'auto';
 
 arUi.addEventListener('touchstart', (event) => {
     if (!placed || event.touches.length !== 2) return;
@@ -355,6 +355,7 @@ app.xr?.on('start', () => {
     startButton.hidden = true;
     backButton.hidden = false;
     arUi.style.pointerEvents = 'auto';
+    arUi.style.touchAction = 'none';
     reticle.enabled = false;
     latestPosition = null;
     latestRotation = null;
@@ -411,6 +412,7 @@ app.xr?.on('end', () => {
     startButton.hidden = false;
     backButton.hidden = false;
     arUi.style.pointerEvents = '';
+    arUi.style.touchAction = 'auto';
     modelRoot.enabled = false;
     modelRoot.setLocalScale(1, 1, 1);
     userScale = 1;

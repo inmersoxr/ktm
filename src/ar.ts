@@ -81,8 +81,8 @@ let bootstrapError: string | null = null;
 const nativeXr = (navigator as any).xr;
 const hasNativeWebXr = !!nativeXr && typeof nativeXr.requestSession === 'function';
 const isAndroid = /Android/i.test(navigator.userAgent);
-const isChrome = /Chrome\\/|CriOS\\//i.test(navigator.userAgent) && !/SamsungBrowser|EdgA\\/|OPR\\/|UCBrowser/i.test(navigator.userAgent);
-const isEmbeddedBrowser = /Instagram|FBAN|FBAV|FB_IAB|Messenger|TikTok|Line\\//i.test(navigator.userAgent);
+const isChrome = navigator.userAgent.includes('Chrome/') && !['SamsungBrowser', 'EdgA/', 'OPR/', 'UCBrowser'].some((token) => navigator.userAgent.includes(token));
+const isEmbeddedBrowser = ['Instagram', 'FBAN', 'FBAV', 'FB_IAB', 'Messenger', 'TikTok', 'Line/'].some((token) => navigator.userAgent.includes(token));
 const chromeStoreUrl = 'https://play.google.com/store/apps/details?id=com.android.chrome';
 const arServicesUrl = 'https://play.google.com/store/apps/details?id=com.google.ar.core';
 let arReady = false;
@@ -133,6 +133,7 @@ const showReady = () => {
 
 const checkArSupport = async () => {
     if (arBusy || arApp?.xr?.active) return;
+    arReady = false;
     if (isAndroid && isEmbeddedBrowser) {
         showChromeAction('Abre esta experiencia en Chrome para utilizar la realidad aumentada.');
         return;
@@ -183,7 +184,7 @@ const showSessionError = (error: Error) => {
     if (name === 'NotAllowedError' || name === 'SecurityError') {
         setStatus('Chrome no pudo acceder a la cámara o iniciar la RA. Permite el acceso a la cámara en la configuración de este sitio y vuelve a intentar.');
         startButton.textContent = 'Reintentar RA';
-        setRepair('Configuración de Chrome', () => window.location.assign('chrome://settings/content/camera'));
+        setRepair('Volver a comprobar', () => void checkArSupport());
     } else if (name === 'NotSupportedError' && useAnchors) {
         // The requested anchors may be unsupported even when immersive-ar works.
         // The retry must happen on the user's next tap to retain user activation.
@@ -228,7 +229,7 @@ window.addEventListener('unhandledrejection', (event) => {
 
 const startAr = () => {
     if (arBusy) return;
-    if (isAndroid && (isEmbeddedBrowser || !hasNativeWebXr || (!isChrome && !arReady))) {
+    if (isAndroid && (isEmbeddedBrowser || (!isChrome && (!hasNativeWebXr || !arReady)))) {
         openInChrome();
         return;
     }

@@ -13,7 +13,7 @@ import {
     RESOLUTION_AUTO,
     StandardMaterial,
     TextureHandler,
-    XRSPACE_LOCALFLOOR,
+    XRSPACE_LOCAL,
     XRSPACE_VIEWER,
     XRTRACKABLE_PLANE,
     XRTRACKABLE_POINT,
@@ -109,14 +109,18 @@ const startAr = () => {
     const xr = arApp.xr as any;
     if (xr._available) xr._available[XRTYPE_AR] = true;
 
-    xr.start(arCamera.camera, XRTYPE_AR, XRSPACE_LOCALFLOOR, {
+    xr.start(arCamera.camera, XRTYPE_AR, XRSPACE_LOCAL, {
         anchors: true,
         callback: (error: Error | null) => {
             if (error) {
                 console.error(error);
                 const name = error instanceof DOMException ? error.name : 'Error';
                 const message = error instanceof Error ? error.message : String(error);
-                setStatus(`${name}: ${message}`);
+                if (name === 'NotSupportedError') {
+                    setStatus('Este navegador no pudo iniciar WebXR con la configuración disponible en este teléfono.');
+                } else {
+                    setStatus(`${name}: ${message}`);
+                }
             }
         }
     });

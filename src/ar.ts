@@ -81,85 +81,195 @@ let bootstrapError: string | null = null;
 const nativeXr = (navigator as any).xr;
 const hasNativeWebXr = !!nativeXr && typeof nativeXr.requestSession === 'function';
 const isAndroid = /Android/i.test(navigator.userAgent);
+const isChrome = /Chrome\\/|CriOS\\//i.test(navigator.userAgent) && !/SamsungBrowser|EdgA\\/|OPR\\/|UCBrowser/i.test(navigator.userAgent);
+const isEmbeddedBrowser = /Instagram|FBAN|FBAV|FB_IAB|Messenger|TikTok|Line\\//i.test(navigator.userAgent);
+const chromeStoreUrl = 'https://play.google.com/store/apps/details?id=com.android.chrome';
+const arServicesUrl = 'https://play.google.com/store/apps/details?id=com.google.ar.core';
+let arReady = false;
+let arBusy = false;
+let useAnchors = true;
+let lastXrError: { name: string; message: string } | null = null;
 
-const openInChrome = () => {
-    const url = new URL(window.location.href);
-    const target = `${url.host}${url.pathname}${url.search}`;
-    window.location.href = `intent://${target}#Intent;scheme=https;package=com.android.chrome;end`;
+const repairButton = document.createElement('button');
+repairButton.id = 'ar-repair';
+repairButton.type = 'button';
+repairButton.hidden = true;
+arUi.appendChild(repairButton);
+
+const setRepair = (label?: string, action?: () => void) => {
+    repairButton.hidden = !label || !action;
+    repairButton.textContent = label ?? '';
+    repairButton.onclick = action ?? null;
 };
 
-if (!hasNativeWebXr) {
-    if (isAndroid) {
-        setStatus('Este navegador interno no ofrece WebXR. Abre la experiencia en Chrome.');
-        startButton.textContent = 'Abrir en Chrome';
-    } else {
-        setStatus('Este navegador no ofrece WebXR para esta experiencia.');
-        startButton.textContent = 'RA no disponible';
+const openInChrome = () => {
+    // Only navigate from a direct tap. Browsers may block Android intents.
+    const url = new URL(window.location.href);
+    const target = `${url.host}${url.pathname}${url.search}`;
+    window.location.href = `intent://${target}#Intent;scheme=${url.protocol === 'http:' ? 'http' : 'https'};package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(url.href)};end`;
+};
+
+const showChromeAction = (message: string) => {
+    setStatus(message);
+    startButton.textContent = 'Abrir en Chrome';
+    startButton.disabled = false;
+    setRepair('Instalar o actualizar Chrome', () => window.location.assign(chromeStoreUrl));
+};
+
+const showArServicesAction = (message: string) => {
+    setStatus(message);
+    startButton.textContent = 'Volver a comprobar';
+    startButton.disabled = false;
+    setRepair('Comprobar servicios de RA', () => window.location.assign(arServicesUrl));
+};
+
+const showReady = () => {
+    if (arBusy || arApp?.xr?.active || bootstrapError) return;
+    setRepair();
+    startButton.textContent = 'Iniciar RA';
+    startButton.disabled = false;
+    setStatus(splatEntity ? 'Modelo listo. Pulsa “Iniciar RA”.' : 'RA disponible. Cargando motocicleta…');
+};
+
+const checkArSupport = async () => {
+    if (arBusy || arApp?.xr?.active) return;
+    if (isAndroid && isEmbeddedBrowser) {
+        showChromeAction('Abre esta experiencia en Chrome para utilizar la realidad aumentada.');
+        return;
     }
+    if (!window.isSecureContext) {
+        setStatus('La RA necesita una conexión HTTPS. Abre la dirección segura de esta página.');
+        startButton.textContent = 'Reintentar';
+        setRepair();
+        return;
+    }
+    if (!hasNativeWebXr) {
+        if (isAndroid) {
+            showChromeAction(isChrome
+                ? 'Chrome no ofrece WebXR aquí. Comprueba si está actualizado.'
+                : 'Este navegador no ofrece WebXR. Abre la experiencia en Chrome.');
+        } else {
+            setStatus('Este navegador no ofrece WebXR para esta experiencia.');
+            startButton.textContent = 'Volver a comprobar';
+            setRepair();
+        }
+        return;
+    }
+    if (typeof nativeXr.isSessionSupported !== 'function') {
+        showArServicesAction('No se pudo comprobar la RA. Revisa los servicios de RA o actualiza Chrome.');
+        return;
+    }
+    setStatus('Comprobando realidad aumentada…');
+    try {
+        arReady = await nativeXr.isSessionSupported('immersive-ar');
+        if (arReady) {
+            showReady();
+        } else if (isAndroid && !isChrome) {
+            showChromeAction('Este navegador no permite iniciar RA. Ábrelo en Chrome.');
+        } else {
+            showArServicesAction('La RA todavía no está disponible en Chrome. Comprueba o actualiza los servicios de RA y vuelve aquí.');
+        }
+    } catch (error) {
+        console.error('WebXR availability check:', error);
+        showArServicesAction('Chrome no pudo comprobar la RA. Comprueba los servicios de RA y vuelve a intentar.');
+    }
+};
+
+const showSessionError = (error: Error) => {
+    const name = error.name || 'Error';
+    const message = error.message || String(error);
+    lastXrError = { name, message };
+    console.error('AR session:', { name, message, browser: navigator.userAgent, anchors: useAnchors });
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+        setStatus('Chrome no pudo acceder a la cámara o iniciar la RA. Permite el acceso a la cámara en la configuración de este sitio y vuelve a intentar.');
+        startButton.textContent = 'Reintentar RA';
+        setRepair('Configuración de Chrome', () => window.location.assign('chrome://settings/content/camera'));
+    } else if (name === 'NotSupportedError' && useAnchors) {
+        // The requested anchors may be unsupported even when immersive-ar works.
+        // The retry must happen on the user's next tap to retain user activation.
+        useAnchors = false;
+        setStatus('Este teléfono rechazó la configuración avanzada. Prueba la RA sin anclajes.');
+        startButton.textContent = 'Reintentar RA';
+        setRepair('Comprobar servicios de RA', () => window.location.assign(arServicesUrl));
+    } else if (name === 'NotSupportedError' && isAndroid && !isChrome) {
+        showChromeAction('Este navegador no pudo iniciar RA. Prueba en Chrome.');
+    } else if (name === 'NotSupportedError' && isAndroid) {
+        showArServicesAction('Chrome no pudo iniciar la RA. Comprueba o actualiza los servicios de RA y vuelve a intentar.');
+    } else if (name === 'InvalidStateError') {
+        setStatus('La sesión anterior sigue activa o no ha terminado de cerrarse. Vuelve a intentar.');
+        startButton.textContent = 'Reintentar RA';
+        setRepair();
+    } else {
+        setStatus('La sesión RA no se inició. Puedes volver a intentar o comprobar los servicios de RA.');
+        startButton.textContent = 'Reintentar RA';
+        setRepair(isAndroid ? 'Comprobar servicios de RA' : undefined,
+            isAndroid ? () => window.location.assign(arServicesUrl) : undefined);
+    }
+};
+
+if (isAndroid && isEmbeddedBrowser) {
+    showChromeAction('Este navegador interno no ofrece una experiencia RA fiable. Abre en Chrome.');
+} else if (!hasNativeWebXr && isAndroid) {
+    showChromeAction('Este navegador no ofrece WebXR. Abre en Chrome.');
 }
 
 window.addEventListener('error', (event) => {
     bootstrapError = event.message || 'Error de inicialización';
     setStatus(`Error de RA: ${bootstrapError}`);
+    setRepair();
 });
 
 window.addEventListener('unhandledrejection', (event) => {
     const reason = event.reason instanceof Error ? event.reason.message : String(event.reason);
     bootstrapError = reason;
     setStatus(`Error de RA: ${reason}`);
+    setRepair();
 });
 
 const startAr = () => {
-    // Embedded browsers such as the Instagram browser can omit navigator.xr
-    // entirely even on an AR-capable Android phone. Never force PlayCanvas
-    // past that capability boundary: redirect from a real user tap instead.
-    if (!hasNativeWebXr) {
-        if (isAndroid) {
-            setStatus('Abriendo la experiencia en Chrome…');
-            openInChrome();
-        } else {
-            setStatus('Este navegador no ofrece WebXR para esta experiencia.');
-        }
+    if (arBusy) return;
+    if (isAndroid && (isEmbeddedBrowser || !hasNativeWebXr || (!isChrome && !arReady))) {
+        openInChrome();
         return;
     }
-
     if (bootstrapError) {
         setStatus(`Error de RA: ${bootstrapError}`);
         return;
     }
-
+    if (!hasNativeWebXr || !arReady) {
+        void checkArSupport();
+        return;
+    }
     if (!arApp || !arCamera?.camera || !arApp.xr) {
-        setStatus('La RA todavía se está inicializando. Espera un segundo y vuelve a tocar.');
+        setStatus('La RA se está inicializando. Inténtalo nuevamente en un momento.');
         return;
     }
 
+    arBusy = true;
+    startButton.disabled = true;
+    setRepair();
     setStatus('Solicitando sesión RA…');
 
-    // PlayCanvas 2.20 can lag behind the browser's own XR availability state.
-    // Only bypass its cached flag after confirming that navigator.xr and
-    // requestSession actually exist. This preserves the working Android path
-    // without crashing inside embedded browsers that expose no WebXR API.
+    // PlayCanvas may lag behind the native API's capability check.
     const xr = arApp.xr as any;
     if (xr._available) xr._available[XRTYPE_AR] = true;
 
     xr.start(arCamera.camera, XRTYPE_AR, XRSPACE_LOCAL, {
-        anchors: true,
+        anchors: useAnchors,
         callback: (error: Error | null) => {
-            if (error) {
-                console.error(error);
-                const name = error instanceof DOMException ? error.name : 'Error';
-                const message = error instanceof Error ? error.message : String(error);
-                if (name === 'NotSupportedError') {
-                    setStatus('Este navegador no pudo iniciar WebXR con la configuración disponible en este teléfono.');
-                } else {
-                    setStatus(`${name}: ${message}`);
-                }
-            }
+            arBusy = false;
+            startButton.disabled = false;
+            if (error) showSessionError(error);
+            else lastXrError = null;
         }
     });
 };
 
 startButton.addEventListener('click', startAr);
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && !arApp?.xr?.active && !arBusy) void checkArSupport();
+});
+void checkArSupport();
 
 const device = await createGraphicsDevice(canvas, {
     deviceTypes: [DEVICETYPE_WEBGL2],
@@ -295,7 +405,7 @@ splatAsset.on('load', () => {
 
     modelRoot.addChild(splat);
     splatEntity = splat;
-    setStatus('Modelo listo. Pulsa “Iniciar RA”.');
+    if (arReady) showReady();
 });
 
 splatAsset.on('error', (error: unknown) => {
@@ -384,6 +494,7 @@ app.xr?.on('start', () => {
     userScale = 1;
     pinchStartDistance = null;
     modelRoot.setLocalScale(1, 1, 1);
+    setRepair();
     setStatus('Mueve el teléfono lentamente y apunta a una superficie plana.');
 });
 
@@ -454,20 +565,8 @@ app.xr?.on('end', () => {
     }
 
     backButton.disabled = false;
-    setStatus('Sesión RA finalizada.');
+    void checkArSupport();
 });
-
-if (app.xr) {
-    const syncAvailability = () => {
-        if (app.xr?.isAvailable(XRTYPE_AR)) {
-            setStatus(splatEntity ? 'Modelo listo. Pulsa “Iniciar RA”.' : 'RA disponible. Cargando motocicleta…');
-        }
-    };
-    app.xr.on('available', (type, available) => {
-        if (type === XRTYPE_AR && available) syncAvailability();
-    });
-    syncAvailability();
-}
 
 const resize = () => app.resizeCanvas();
 window.addEventListener('resize', resize);

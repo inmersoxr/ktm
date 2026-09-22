@@ -249,7 +249,7 @@ export function createArDiagnostics(
         },
         modelReady() {
             modelLoaded = true;
-            if (!issue && !document.body.classList.contains('xr-active')) clear();
+            if (!issue && !waiting && support !== false && !document.body.classList.contains('xr-active')) clear();
         },
         started() {
             issue = false;

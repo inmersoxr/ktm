@@ -25,6 +25,7 @@ import {
 import type { BoundingBox, Quat, Vec3 } from 'playcanvas';
 
 import { SPLAT_URL } from './splat-config';
+import { createArDiagnostics } from './ar-diagnostics';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#ar-canvas');
 const startButton = document.querySelector<HTMLButtonElement>('#ar-start');
@@ -78,88 +79,66 @@ let arApp: AppBase | null = null;
 let arCamera: Entity | null = null;
 let bootstrapError: string | null = null;
 
+const diagnostics = createArDiagnostics(
+    startButton,
+    status,
+    document.querySelector<HTMLElement>('#ar-guide')!
+);
 const nativeXr = (navigator as any).xr;
-const hasNativeWebXr = !!nativeXr && typeof nativeXr.requestSession === 'function';
-const isAndroid = /Android/i.test(navigator.userAgent);
 
-const openInChrome = () => {
-    const url = new URL(window.location.href);
-    const target = `${url.host}${url.pathname}${url.search}`;
-    window.location.href = `intent://${target}#Intent;scheme=https;package=com.android.chrome;end`;
-};
-
-if (!hasNativeWebXr) {
-    if (isAndroid) {
-        setStatus('Este navegador interno no ofrece WebXR. Abre la experiencia en Chrome.');
-        startButton.textContent = 'Abrir en Chrome';
-    } else {
-        setStatus('Este navegador no ofrece WebXR para esta experiencia.');
-        startButton.textContent = 'RA no disponible';
-    }
-}
-
-window.addEventListener('error', (event) => {
-    bootstrapError = event.message || 'Error de inicialización';
-    setStatus(`Error de RA: ${bootstrapError}`);
-});
-
-window.addEventListener('unhandledrejection', (event) => {
-    const reason = event.reason instanceof Error ? event.reason.message : String(event.reason);
-    bootstrapError = reason;
-    setStatus(`Error de RA: ${reason}`);
-});
-
+// Keep the session request within the actual button tap. An asynchronous
+// capability check inside this handler would lose WebXR's user activation.
 const startAr = () => {
-    // Embedded browsers such as the Instagram browser can omit navigator.xr
-    // entirely even on an AR-capable Android phone. Never force PlayCanvas
-    // past that capability boundary: redirect from a real user tap instead.
-    if (!hasNativeWebXr) {
-        if (isAndroid) {
-            setStatus('Abriendo la experiencia en Chrome…');
-            openInChrome();
-        } else {
-            setStatus('Este navegador no ofrece WebXR para esta experiencia.');
-        }
+    if (diagnostics.needsChrome) {
+        diagnostics.openChrome();
         return;
     }
-
     if (bootstrapError) {
-        setStatus(`Error de RA: ${bootstrapError}`);
+        diagnostics.showInitError(bootstrapError);
         return;
     }
-
+    if (!diagnostics.canAttempt) {
+        void diagnostics.check();
+        return;
+    }
     if (!arApp || !arCamera?.camera || !arApp.xr) {
-        setStatus('La RA todavía se está inicializando. Espera un segundo y vuelve a tocar.');
+        setStatus('Preparando RA. Espera un momento y vuelve a intentar.');
         return;
     }
 
-    setStatus('Solicitando sesión RA…');
-
-    // PlayCanvas 2.20 can lag behind the browser's own XR availability state.
-    // Only bypass its cached flag after confirming that navigator.xr and
-    // requestSession actually exist. This preserves the working Android path
-    // without crashing inside embedded browsers that expose no WebXR API.
+    diagnostics.requesting();
+    // PlayCanvas availability can lag behind navigator.xr on Android. Only
+    // update its cached flag when the native API is actually present.
     const xr = arApp.xr as any;
-    if (xr._available) xr._available[XRTYPE_AR] = true;
+    if (nativeXr?.requestSession && xr._available) {
+        xr._available[XRTYPE_AR] = true;
+    }
 
     xr.start(arCamera.camera, XRTYPE_AR, XRSPACE_LOCAL, {
-        anchors: true,
+        anchors: diagnostics.useAnchors,
         callback: (error: Error | null) => {
-            if (error) {
-                console.error(error);
-                const name = error instanceof DOMException ? error.name : 'Error';
-                const message = error instanceof Error ? error.message : String(error);
-                if (name === 'NotSupportedError') {
-                    setStatus('Este navegador no pudo iniciar WebXR con la configuración disponible en este teléfono.');
-                } else {
-                    setStatus(`${name}: ${message}`);
-                }
-            }
+            if (error) diagnostics.handleError(error);
+            else startButton.disabled = false;
         }
     });
 };
 
 startButton.addEventListener('click', startAr);
+
+window.addEventListener('error', (event) => {
+    bootstrapError = event.message || 'Error de inicialización';
+    diagnostics.showInitError(bootstrapError);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason instanceof Error ? event.reason.message : String(event.reason);
+    // Only report uncaught startup failures. Session errors are handled by
+    // their callback and must not disable subsequent recovery attempts.
+    if (!arApp?.xr?.active) {
+        bootstrapError = reason;
+        diagnostics.showInitError(reason);
+    }
+});
 
 const device = await createGraphicsDevice(canvas, {
     deviceTypes: [DEVICETYPE_WEBGL2],
@@ -295,7 +274,7 @@ splatAsset.on('load', () => {
 
     modelRoot.addChild(splat);
     splatEntity = splat;
-    setStatus('Modelo listo. Pulsa “Iniciar RA”.');
+    diagnostics.modelReady();
 });
 
 splatAsset.on('error', (error: unknown) => {
@@ -384,6 +363,7 @@ app.xr?.on('start', () => {
     userScale = 1;
     pinchStartDistance = null;
     modelRoot.setLocalScale(1, 1, 1);
+    diagnostics.started();
     setStatus('Mueve el teléfono lentamente y apunta a una superficie plana.');
 });
 
@@ -455,19 +435,11 @@ app.xr?.on('end', () => {
 
     backButton.disabled = false;
     setStatus('Sesión RA finalizada.');
+    diagnostics.ended();
 });
 
-if (app.xr) {
-    const syncAvailability = () => {
-        if (app.xr?.isAvailable(XRTYPE_AR)) {
-            setStatus(splatEntity ? 'Modelo listo. Pulsa “Iniciar RA”.' : 'RA disponible. Cargando motocicleta…');
-        }
-    };
-    app.xr.on('available', (type, available) => {
-        if (type === XRTYPE_AR && available) syncAvailability();
-    });
-    syncAvailability();
-}
+// Passive capability check does not request a session or camera permission.
+void diagnostics.check();
 
 const resize = () => app.resizeCanvas();
 window.addEventListener('resize', resize);

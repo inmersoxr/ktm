@@ -104,8 +104,9 @@ export function createArDiagnostics(
             'Revisa en Chrome los permisos de cámara de esta página y en Android los permisos de Chrome.',
             'Al volver aquí, pulsa «Volver a comprobar».'
         ],
-        link: arStore,
-        linkText: 'Comprobar servicios de RA'
+        link: permissionBlocked ? undefined : arStore,
+        linkText: permissionBlocked ? undefined : 'Comprobar servicios de RA',
+        primary: permissionBlocked || support === false ? 'Volver a comprobar' : 'Reintentar RA'
     });
 
     const cameraPermission = async () => {

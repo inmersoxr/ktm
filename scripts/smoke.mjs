@@ -52,7 +52,16 @@ try {
     let verticalOrbitChangedImage = false;
     let hintDismissedByGesture = false;
     if (model) {
-      await page.screenshot({ path: screenshots + '/viewer-initial.png', timeout: 10000 }).catch(() => {});
+      // The loader hides after the asset initializes; also demand a real
+      // rendered motorcycle, not merely a black canvas with visible UI.
+      let initialScreenBytes=0;
+      for(let attempt=0;attempt<4;attempt++){
+        const initial=await page.screenshot({path:screenshots+'/viewer-initial.png',timeout:10000});
+        initialScreenBytes=initial.length;
+        if(initialScreenBytes>140000)break;
+        await page.waitForTimeout(400);
+      }
+      if(initialScreenBytes<=140000)throw Error('Desktop motorcycle did not render after load; screenshot bytes='+initialScreenBytes);
       const firstHeading = await page.locator('#view-title').innerText();
       if (firstHeading !== 'KTM 390 DUKE') throw Error('Commercial portada missing: ' + firstHeading);
       const before = await page.locator('#app').screenshot();
@@ -147,7 +156,9 @@ try {
       labels:[...document.querySelectorAll('#view-nav .view-button')].map(n=>n.textContent?.trim()),
       noDesktopGrid:getComputedStyle(document.querySelector('#view-nav')).display!=='grid'
     }));
-    await page.screenshot({path:screenshots+'/viewer-mobile-landscape.png'}).catch(()=>{});
+    await page.waitForTimeout(550);
+    const mobileScreenshot=await page.screenshot({path:screenshots+'/viewer-mobile-landscape.png'}).catch(()=>null);
+    result.screenshotBytes=mobileScreenshot?.length ?? 0;
     result.errors=getErrors();
     await context.close();
     if(!result.arVisible||!result.touch||result.desktop||result.title!=='KTM 390 DUKE'||

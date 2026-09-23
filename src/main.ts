@@ -861,8 +861,12 @@ splatAsset.on('load', () => {
     if (!initialPose || !applyCameraPose(viewPose(initialPose, 0))) {
         frameSplat(splat, aabb);
     }
-    hideLoader();
-    showGestureHint();
+    // Allow the renderer to present the first GSplat frame before revealing
+    // the showroom. Asset load alone does not imply WebGPU has drawn it yet.
+    window.setTimeout(() => {
+        hideLoader();
+        showGestureHint();
+    }, 450);
 });
 
 splatAsset.on('progress', (received: number, length: number) => {

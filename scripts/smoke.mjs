@@ -144,6 +144,7 @@ try {
     const response = await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForFunction(() => document.querySelector('#loader')?.dataset.hidden === 'true', { timeout: 50000 });
     const nav = await page.locator('#view-nav .view-button').count();
+    const initialHeading = await page.locator('#view-title').innerText();
     const mobilePoseSamples=[];
     for(let i=0;i<8;i++){
       await page.locator('#view-nav .view-button').nth(i).click();
@@ -164,7 +165,6 @@ try {
       }
       if(d.pose.fov!==m.pose.fov)throw Error('FOV differs at view '+i);
     }
-    const initialHeading = await page.locator('#view-title').innerText();
     const mobileARVisible = await page.locator('#xr-button').isVisible();
     if (!mobileARVisible || initialHeading !== 'KTM 390 DUKE') throw Error('Mobile controls or commercial copy changed');
     await page.locator('#xr-button').click();

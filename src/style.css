@@ -41,13 +41,39 @@ button { font: inherit; }
 #view-kicker { color: #ff6a22; font-size: 12px; font-weight: 850; letter-spacing: .18em; }
 #view-copy h1 { margin: 10px 0 8px; max-width: 480px; color: #fff; font-size: clamp(34px, 5vw, 70px); line-height: .94; letter-spacing: -.045em; }
 #view-copy p { margin: 0; max-width: 390px; color: rgb(255 255 255 / 94%); font-size: 14px; font-weight: 500; line-height: 1.55; }
-#view-nav { position: fixed; z-index: 5; right: 24px; top: 50%; display: grid; gap: 8px; transform: translateY(-50%); }
-.view-button { display: flex; align-items: center; justify-content: flex-end; gap: 10px; border: 0; background: transparent; color: rgb(255 255 255 / 78%); cursor: pointer; }
-.view-button span { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid rgb(255 255 255 / 26%); border-radius: 50%; background: rgb(9 11 14 / 65%); transition: .2s; }
-.view-button small { width: 0; opacity: 0; overflow: hidden; white-space: nowrap; transition: .25s; }
-.view-button:hover small, .view-button.active small { width: 145px; opacity: 1; }
-.view-button.active { color: white; }
-.view-button.active span { border-color: #ff6a22; background: #ff5a18; color: #111; font-weight: 900; }
+#view-nav {
+    position: fixed;
+    z-index: 5;
+    left: 50%;
+    bottom: 18px;
+    display: flex;
+    gap: 8px;
+    width: max-content;
+    max-width: calc(100vw - 40px);
+    padding: 5px 2px 8px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    transform: translateX(-50%);
+}
+#view-nav::-webkit-scrollbar { display: none; }
+.view-button {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(255 255 255 / 18%);
+    border-radius: 999px;
+    padding: 10px 15px;
+    background: rgb(9 11 14 / 78%);
+    color: #fff;
+    cursor: pointer;
+    backdrop-filter: blur(12px);
+    transition: background .2s, border-color .2s;
+}
+.view-button small { display: block; width: auto; opacity: 1; overflow: visible; white-space: nowrap; font-size: 12px; font-weight: 650; }
+.view-button.active { background: #ff5a18; border-color: #ff6a22; color: #111; }
+.view-button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 #controls { opacity: .32; transform: scale(.82); transform-origin: bottom left; transition: opacity .2s; }
 #controls:hover { opacity: 1; }
 
@@ -126,7 +152,7 @@ button { font: inherit; }
 #controls {
     position: fixed;
     left: 16px;
-    bottom: 16px;
+    bottom: 92px;
     display: grid;
     width: min(340px, calc(100vw - 32px));
     gap: 11px;
@@ -258,39 +284,18 @@ kbd {
     #view-copy { top: 18%; left: 18px; }
     #view-copy h1 { font-size: 38px; }
     #view-nav {
-        top: auto;
         right: 12px;
-        bottom: 18px;
         left: 12px;
-        display: flex;
+        bottom: 18px;
+        width: auto;
+        max-width: none;
         justify-content: flex-start;
         gap: 7px;
-        overflow-x: auto;
         padding: 4px 0;
         transform: none;
-        scrollbar-width: none;
     }
-    #view-nav::-webkit-scrollbar { display: none; }
-    .view-button {
-        flex: 0 0 auto;
-        justify-content: flex-start;
-        gap: 7px;
-        padding: 7px 10px 7px 7px;
-        border: 1px solid rgb(255 255 255 / 16%);
-        border-radius: 999px;
-        background: rgb(9 11 14 / 72%);
-        backdrop-filter: blur(12px);
-    }
-    .view-button small {
-        display: block;
-        width: auto;
-        max-width: 150px;
-        opacity: 1;
-        overflow: visible;
-        font-size: 11px;
-        font-weight: 650;
-    }
-    .view-button span { width: 30px; height: 30px; flex: 0 0 30px; }
+    .view-button { padding: 9px 12px; }
+    .view-button small { max-width: 170px; font-size: 11px; }
     #controls {
         display: none;
     }
@@ -305,7 +310,7 @@ kbd {
 #gesture-hint {
     position: fixed;
     z-index: 9;
-    bottom: 24px;
+    bottom: 94px;
     left: 50%;
     display: flex;
     flex-direction: column;
@@ -338,4 +343,9 @@ kbd {
 }
 @media (prefers-reduced-motion: reduce) {
     #gesture-hint { transition: none; }
+}
+
+@media (min-width: 720px) {
+    #view-copy { top: 16%; width: min(350px, calc(100vw - 48px)); }
+    #view-copy h1 { font-size: clamp(34px, 4vw, 54px); }
 }

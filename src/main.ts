@@ -20,6 +20,7 @@ import {
 import type { BoundingBox } from 'playcanvas';
 
 import './style.css';
+import { DESKTOP_CAMERA_FOV, prepareViewerPose } from './viewer-camera';
 import { orbitAboveCenter } from './orbit-geometry';
 import type { CameraPose, ProductView } from './splat-config';
 import { CAMERA_POSE, PRODUCT_VIEWS, SPLAT_URL } from './splat-config';
@@ -47,7 +48,8 @@ if (!canvas) {
     throw new Error('Missing #app canvas');
 }
 
-const DEFAULT_FOV = 75;
+const isDesktopViewer = window.matchMedia('(min-width: 720px) and (pointer: fine)').matches;
+const DEFAULT_FOV = isDesktopViewer ? DESKTOP_CAMERA_FOV : 75;
 const DEFAULT_CAMERA_DIRECTION = new Vec3(2, 1, 2).normalize();
 const DEFAULT_PITCH = (Math.asin(DEFAULT_CAMERA_DIRECTION.y) * 180) / Math.PI;
 const DEFAULT_YAW = (Math.atan2(DEFAULT_CAMERA_DIRECTION.x, DEFAULT_CAMERA_DIRECTION.z) * 180) / Math.PI;
@@ -179,6 +181,7 @@ const loadSavedViews = (): ProductView[] => {
 };
 
 let views: ProductView[] = loadSavedViews();
+const viewPose = <T extends CameraPose>(pose: T, index: number): T => prepareViewerPose(pose, index, isDesktopViewer);
 
 const updateCameraPosition = () => {
     const yawRad = (yaw * Math.PI) / 180;
@@ -204,7 +207,9 @@ const getFrameDistance = (radius: number) => {
 };
 
 const clampDistance = (value: number) => {
-    const minDistance = Math.max(sceneRadius * 0.02, 0.02);
+    const minDistance = isDesktopViewer
+        ? activeView <= 3 ? Math.max(sceneRadius * 0.95, 1.65) : Math.max(sceneRadius * 0.12, 0.24)
+        : Math.max(sceneRadius * 0.02, 0.02);
     const maxDistance = Math.max(sceneRadius * 40, 30);
     return Math.max(minDistance, Math.min(maxDistance, value));
 };
@@ -269,7 +274,7 @@ const currentPose = (): CameraPose => {
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const startViewTransition = (index: number) => {
     activeView = index;
-    const view = views[index];
+    const view = viewPose(views[index], index);
 
     // Presets are absolute world-space poses. Clear any residual navigation
     // state so the destination never depends on where the user was before.
@@ -292,7 +297,10 @@ views.forEach((view, index) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `view-button${index === 0 ? ' active' : ''}`;
-    button.innerHTML = `<span>${view.number}</span><small>${view.title}</small>`;
+    const label = document.createElement('small');
+    label.textContent = view.title;
+    button.appendChild(label);
+    button.setAttribute('aria-label', view.title);
     button.addEventListener('click', () => startViewTransition(index));
     viewNav?.appendChild(button);
 });
@@ -394,7 +402,7 @@ const saveCurrentView = () => {
         fov: pose.fov
     };
     saveViews();
-    applyCameraPose(views[activeView]);
+    applyCameraPose(viewPose(views[activeView], activeView));
     updateEditorLabel();
     const note = editorPanel.querySelector<HTMLDivElement>('#camera-editor-note');
     if (note) note.textContent = `Vista ${String(current.number).padStart(2, '0')} guardada exactamente en esta posición.`;
@@ -419,7 +427,7 @@ editorPanel.querySelector<HTMLButtonElement>('#camera-editor-done')?.addEventLis
 editorPanel.querySelector<HTMLButtonElement>('#camera-reset-views')?.addEventListener('click', () => {
     localStorage.removeItem(CAMERA_STORAGE_KEY);
     views = PRODUCT_VIEWS.map((view) => ({ ...view }));
-    applyCameraPose(views[activeView]);
+    applyCameraPose(viewPose(views[activeView], activeView));
     updateEditorLabel();
     const note = editorPanel.querySelector<HTMLDivElement>('#camera-editor-note');
     if (note) note.textContent = 'Poses restauradas a los valores publicados.';
@@ -468,7 +476,7 @@ app.xr?.on('end', () => {
         splatEntity.setLocalScale(1, 1, 1);
         splatEntity.setLocalPosition(0, 0, 0);
     }
-    applyCameraPose(views[activeView] ?? CAMERA_POSE!);
+    applyCameraPose(viewPose(views[activeView] ?? CAMERA_POSE!, activeView));
 });
 
 const frameSplat = (splat: Entity, aabb?: BoundingBox) => {
@@ -733,7 +741,7 @@ app.on('destroy', () => {
 });
 
 const initialPose = views[0] ?? CAMERA_POSE;
-if (!initialPose || !applyCameraPose(initialPose)) {
+if (!initialPose || !applyCameraPose(viewPose(initialPose, 0))) {
     setDefaultFrame();
 }
 
@@ -834,7 +842,7 @@ splatAsset.on('load', () => {
     }
 
     const initialPose = views[0] ?? CAMERA_POSE;
-    if (!initialPose || !applyCameraPose(initialPose)) {
+    if (!initialPose || !applyCameraPose(viewPose(initialPose, 0))) {
         frameSplat(splat, aabb);
     }
     hideLoader();

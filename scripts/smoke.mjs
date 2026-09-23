@@ -62,9 +62,20 @@ try {
       verticalOrbitChangedImage = !before.equals(after);
       hintDismissedByGesture = !(await page.locator('#gesture-hint').evaluate((element) => element.classList.contains('is-visible')));
     }
+    const desktopNavigation = await page.locator('#view-nav').evaluate((nav) => {
+      const rect=nav.getBoundingClientRect();
+      const label=nav.querySelector('.view-button small');
+      return {
+        bottom:rect.bottom,viewportHeight:window.innerHeight,
+        labels:[...nav.querySelectorAll('.view-button')].map((b)=>b.textContent?.trim()),
+        numberBadges:nav.querySelectorAll('.view-button span').length,
+        visible:!!label && getComputedStyle(label).opacity==='1'
+      };
+    });
     const result = {
       status: response?.status(),
       nav: await page.locator('.view-button').count(),
+      desktopNavigation,
       model,
       hintShown,
       hintDismissedByGesture,
@@ -75,7 +86,7 @@ try {
     };
     await page.screenshot({ path: screenshots + '/viewer.png', timeout: 10000 }).catch(() => {});
     await page.close();
-    if (!model || !hintShown || !hintDismissedByGesture || !verticalOrbitChangedImage || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Viewer or gesture failure: ' + JSON.stringify(result));
+    if (!model || !hintShown || !hintDismissedByGesture || !verticalOrbitChangedImage || !result.desktopNavigation.visible || result.desktopNavigation.numberBadges !== 0 || result.desktopNavigation.labels.length !== 8 || result.desktopNavigation.bottom < result.desktopNavigation.viewportHeight - 75 || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Viewer/nav/gesture failure: ' + JSON.stringify(result));
     return result;
   });
 

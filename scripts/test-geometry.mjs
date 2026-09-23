@@ -74,3 +74,18 @@ const userGuide=readFileSync(new URL('../src/ar-diagnostics.ts',import.meta.url)
 assert.doesNotMatch(userGuide,/Reintenta sin anclajes|Probar una configuración más sencilla/);
 assert.match(arSrc,/anchors: false/);
 console.log('PASS: live floor ray, fast expiry, inverted gesture and no advanced AR setup.');
+
+const desktopCamera = loadTs('../src/viewer-camera.ts');
+const sourcePose={position:[3.68,1.55,2.02],target:[1.71,1.2,-1.08],fov:75};
+const first=desktopCamera.prepareViewerPose(sourcePose,0,true);
+close(first.fov,46);
+assert.ok(first.position.every(Number.isFinite));
+assert.ok(Math.hypot(...first.position.map((x,i)=>x-sourcePose.target[i])) >
+          Math.hypot(...sourcePose.position.map((x,i)=>x-sourcePose.target[i])));
+const mobile=desktopCamera.prepareViewerPose(sourcePose,0,false);
+close(mobile.fov,75);
+for(let i=0;i<3;i++)close(mobile.position[i],sourcePose.position[i]);
+const detail=desktopCamera.prepareViewerPose({position:[2.9,.45,.25],target:[1.68,.24,-1.1],fov:58},5,true);
+close(detail.fov,46);
+assert.ok(detail.position[0]>2.9);
+console.log('PASS: desktop standard lens and original mobile presets.');

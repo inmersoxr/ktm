@@ -47,7 +47,7 @@ try {
     const response = await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForSelector('#view-nav .view-button', { timeout: 20000 });
     let model = false;
-    try { await page.waitForSelector('#loader[data-hidden="true"]', { timeout: 45000 }); model = true; } catch {}
+    try { await page.waitForFunction(() => document.querySelector('#loader')?.dataset.hidden === 'true', { timeout: 45000 }); model = true; } catch {}
     const result = {
       status: response?.status(),
       nav: await page.locator('.view-button').count(),
@@ -58,7 +58,33 @@ try {
     };
     await page.screenshot({ path: screenshots + '/viewer.png', timeout: 10000 }).catch(() => {});
     await page.close();
-    if (!model) throw Error('Model loader did not complete: ' + JSON.stringify(result));
+    if (!model || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Viewer runtime failure: ' + JSON.stringify(result));
+    return result;
+  });
+
+
+  await trial('viewer mobile navigation to RA', async () => {
+    const context = await browser.newContext({
+      viewport: { width: 412, height: 915 },
+      isMobile: true,
+      hasTouch: true,
+      userAgent: 'Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36'
+    });
+    const page = await context.newPage();
+    const getErrors = attach(page, 'viewer mobile');
+    const response = await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForFunction(() => document.querySelector('#loader')?.dataset.hidden === 'true', { timeout: 50000 });
+    const nav = await page.locator('#view-nav .view-button').count();
+    await page.locator('#xr-button').click();
+    await page.waitForURL('**/ar.html', { timeout: 10000 });
+    await page.waitForSelector('#ar-guide:not([hidden])', { timeout: 25000 });
+    const result = {
+      status: response?.status(), nav, arReached: page.url().endsWith('/ar.html'),
+      heading: await page.locator('#ar-guide-heading').innerText(), errors: getErrors()
+    };
+    await page.screenshot({ path: screenshots + '/mobile-ar.png' }).catch(() => {});
+    await context.close();
+    if (nav !== 8 || !result.arReached || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Mobile navigation failure: ' + JSON.stringify(result));
     return result;
   });
 

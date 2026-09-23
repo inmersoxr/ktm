@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   pages: write
   id-token: write
@@ -56,23 +57,57 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Deploy
+      # This repository is also configured for GitHub's legacy branch/Jekyll
+      # deployment. It publishes uncompiled .ts sources and can overwrite the
+      # functional Vite build if it completes after our custom workflow.
+      # Until Pages Settings is switched to GitHub Actions, publish LAST.
+      - name: Wait for concurrent branch-based Pages publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          for attempt in $(seq 1 60); do
+            statuses=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&per_page=50" --jq '.workflow_runs[] | select(.name == "pages build and deployment") | .status')
+            if [ -z "$statuses" ]; then
+              echo "No legacy Pages deployment detected."
+              break
+            fi
+            unfinished=$(printf '%s\n' "$statuses" | grep -v '^completed || true)
+            if [ -z "$unfinished" ]; then
+              echo "Legacy Pages publication finished. Publishing validated Vite artifact last."
+              break
+            fi
+            if [ "$attempt" = 60 ]; then
+              echo "Legacy Pages deployment is still active; refusing a competing publish."
+              exit 1
+            fi
+            sleep 5
+          done
+      - name: Deploy validated Vite site
         id: deployment
         uses: actions/deploy-pages@v4
-      - name: Verify live site, AR page and model assets
+      - name: Verify LIVE built pages and splat assets (not raw TypeScript)
         env:
           SITE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
           set -e
-          for path in "" "ar.html" "splat/meta.json" "splat/means_l.webp"; do
-            ok=0
-            for attempt in $(seq 1 12); do
-              if curl -fsSL --max-time 20 -o /dev/null "${SITE_URL}${path}"; then
-                echo "OK ${SITE_URL}${path}"
-                ok=1
-                break
-              fi
-              sleep 5
-            done
-            if [ "$ok" != 1 ]; then echo "FAILED ${SITE_URL}${path}"; exit 1; fi
+          ok=0
+          for attempt in $(seq 1 24); do
+            viewer=$(curl -fsSL --max-time 20 "${SITE_URL}?v=${GITHUB_SHA}" || true)
+            ar=$(curl -fsSL --max-time 20 "${SITE_URL}ar.html?v=${GITHUB_SHA}" || true)
+            if printf '%s' "$viewer" | grep -Eq 'assets/[A-Za-z0-9_-]+\.js' &&
+               printf '%s' "$ar" | grep -Eq 'assets/[A-Za-z0-9_-]+\.js' &&
+               ! printf '%s' "$viewer" | grep -q '/src/main.ts' &&
+               ! printf '%s' "$ar" | grep -q '/src/ar.ts'; then
+              echo "Compiled viewer and AR entrypoints are now live."
+              ok=1
+              break
+            fi
+            echo "Still seeing stale or raw branch output; waiting for compiled Vite pages..."
+            sleep 5
+          done
+          if [ "$ok" != 1 ]; then echo "ERROR: live GitHub Pages still serves source files instead of compiled JavaScript."; exit 1; fi
+          for path in "splat/meta.json" "splat/means_l.webp"; do
+            curl -fsSL --max-time 20 -o /dev/null "${SITE_URL}${path}" || exit 1
+            echo "Asset available: ${SITE_URL}${path}"
           done

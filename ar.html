@@ -29,16 +29,34 @@
         #ar-start { flex-shrink:0; }
         body.xr-active #ar-guide { display:none; }
         @media (max-width:520px) { #ar-guide {padding:13px 15px; max-height:57vh;} #ar-guide h2 {font-size:17px;} }
-        body.xr-active #ar-status { margin:0 auto; }
+
+        /* Persistent KTM identity in the WebXR DOM overlay. */
+        #ar-identity { display:flex; flex-direction:column; align-items:flex-start; gap:8px; min-width:0; }
+        #ar-brand { display:flex; align-items:center; gap:9px; color:#fff; text-shadow:0 1px 10px rgba(0,0,0,.45); }
+        #ar-brand-mark { display:inline-flex; align-items:center; justify-content:center; padding:6px 8px; background:#ff5a00; color:#111; font-size:15px; font-weight:950; letter-spacing:-.075em; transform:skew(-7deg); }
+        #ar-brand-model { font-size:12px; font-weight:800; letter-spacing:.14em; white-space:nowrap; }
+        #ar-mode-label { color:#ff8a4b; font-size:9px; font-weight:750; letter-spacing:.18em; text-shadow:0 1px 10px #000; }
+        #ar-status { max-width:min(310px, 68vw); font-size:12px; padding:9px 11px; background:rgba(0,0,0,.52); }
+        #ar-back { flex-shrink:0; font-size:12px; padding:10px 14px; }
+        #ar-tip { align-self:center; max-width:330px; margin-top:auto; margin-bottom:12px; padding:10px 14px; border:1px solid rgba(255,255,255,.15); border-radius:12px; background:rgba(0,0,0,.58); color:#fff; text-align:center; font-size:12px; line-height:1.4; opacity:0; transform:translateY(8px); transition:opacity .35s ease, transform .35s ease; pointer-events:none; }
+        #ar-tip[hidden] { display:none; }
+        #ar-tip.shown { opacity:1; transform:translateY(0); }
+        @media (max-width:520px) { #ar-tip { font-size:11px; max-width:280px; } #ar-brand-model { font-size:11px; } }
+        body.xr-active #ar-status { margin:0; }
     </style>
 </head>
 <body>
     <canvas id="ar-canvas"></canvas>
     <div id="ar-ui">
         <div id="ar-top">
-            <div id="ar-status">Cargando motocicleta…</div>
+            <div id="ar-identity">
+                <div id="ar-brand"><span id="ar-brand-mark">KTM</span><strong id="ar-brand-model">DUKE 390</strong></div>
+                <div id="ar-mode-label">REALIDAD AUMENTADA</div>
+                <div id="ar-status">Cargando motocicleta…</div>
+            </div>
             <button id="ar-back" type="button">Volver</button>
         </div>
+        <div id="ar-tip" hidden>Mueve el móvil para detectar una superficie. Toca el aro para colocar la moto.</div>
 
         <section id="ar-guide" aria-live="polite" hidden>
             <h2 id="ar-guide-heading"></h2>

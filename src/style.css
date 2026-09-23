@@ -299,3 +299,43 @@ kbd {
         grid-template-columns: 1fr;
     }
 }
+
+
+/* Quiet, time-limited navigation aid; never intercepts gestures. */
+#gesture-hint {
+    position: fixed;
+    z-index: 9;
+    bottom: 24px;
+    left: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    width: max-content;
+    max-width: calc(100vw - 40px);
+    padding: 10px 15px;
+    border: 1px solid rgb(255 255 255 / 14%);
+    border-radius: 13px;
+    background: rgb(11 14 17 / 80%);
+    box-shadow: 0 8px 28px rgb(0 0 0 / 28%);
+    backdrop-filter: blur(10px);
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.35;
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, 8px);
+    transition: opacity .35s ease, transform .35s ease;
+}
+#gesture-hint.is-visible { opacity: 1; transform: translate(-50%, 0); }
+#gesture-hint .gesture-secondary { color: rgb(255 255 255 / 69%); font-size: 11px; }
+#gesture-hint .gesture-mobile { display: none; }
+@media (max-width: 520px) {
+    #gesture-hint { bottom: 85px; font-size: 11px; padding: 9px 12px; }
+    #gesture-hint .gesture-mobile { display: block; }
+    #gesture-hint .gesture-desktop { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    #gesture-hint { transition: none; }
+}

@@ -79,6 +79,7 @@ const desktopCamera = loadTs('../src/viewer-camera.ts');
 const sourcePose={position:[3.68,1.55,2.02],target:[1.71,1.2,-1.08],fov:75};
 const first=desktopCamera.prepareViewerPose(sourcePose,0,true);
 close(first.fov,46);
+close(first.target[1],sourcePose.target[1] - .55);
 assert.ok(first.position.every(Number.isFinite));
 assert.ok(Math.hypot(...first.position.map((x,i)=>x-sourcePose.target[i])) >
           Math.hypot(...sourcePose.position.map((x,i)=>x-sourcePose.target[i])));

@@ -32,6 +32,14 @@ const startButton = document.querySelector<HTMLButtonElement>('#ar-start');
 const backButton = document.querySelector<HTMLButtonElement>('#ar-back');
 const status = document.querySelector<HTMLDivElement>('#ar-status');
 const arUi = document.querySelector<HTMLElement>('#ar-ui');
+const arTip = document.querySelector<HTMLElement>('#ar-tip');
+let arTipTimeout: number | undefined;
+const hideArTip = () => {
+    if (arTipTimeout !== undefined) window.clearTimeout(arTipTimeout);
+    arTipTimeout = undefined;
+    arTip?.classList.remove('shown');
+    if (arTip) arTip.hidden = true;
+};
 
 if (!canvas || !startButton || !backButton || !status || !arUi) {
     throw new Error('Missing AR interface');
@@ -365,6 +373,11 @@ app.xr?.on('start', () => {
     pinchStartDistance = null;
     modelRoot.setLocalScale(1, 1, 1);
     diagnostics.started();
+    if (arTip) {
+        arTip.hidden = false;
+        arTip.classList.add('shown');
+        arTipTimeout = window.setTimeout(hideArTip, 6500);
+    }
     setStatus('Mueve el teléfono lentamente y apunta a una superficie plana.');
 });
 
@@ -409,6 +422,7 @@ app.xr?.hitTest.on('available', () => {
 
 app.xr?.on('end', () => {
     document.body.classList.remove('xr-active');
+    hideArTip();
     startButton.hidden = false;
     backButton.hidden = false;
     arUi.style.pointerEvents = '';

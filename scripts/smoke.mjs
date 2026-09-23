@@ -53,6 +53,8 @@ try {
     let hintDismissedByGesture = false;
     if (model) {
       await page.screenshot({ path: screenshots + '/viewer-initial.png', timeout: 10000 }).catch(() => {});
+      const firstHeading = await page.locator('#view-title').innerText();
+      if (firstHeading !== 'KTM 390 DUKE') throw Error('Commercial portada missing: ' + firstHeading);
       const before = await page.locator('#app').screenshot();
       await page.mouse.move(640, 420);
       await page.mouse.down();
@@ -70,7 +72,12 @@ try {
         bottom:rect.bottom,viewportHeight:window.innerHeight,
         labels:[...nav.querySelectorAll('.view-button')].map((b)=>b.textContent?.trim()),
         numberBadges:nav.querySelectorAll('.view-button span').length,
-        visible:!!label && getComputedStyle(label).opacity==='1'
+        visible:!!label && getComputedStyle(label).opacity==='1',
+        fits: nav.scrollWidth <= nav.clientWidth + 2 &&
+          [...nav.querySelectorAll('.view-button')].every((b) =>
+            b.getBoundingClientRect().right <= rect.right + 1 &&
+            b.getBoundingClientRect().left >= rect.left - 1),
+        desktopArHidden: getComputedStyle(document.querySelector('#xr-button')).display === 'none'
       };
     });
     const result = {
@@ -87,7 +94,7 @@ try {
     };
     await page.screenshot({ path: screenshots + '/viewer.png', timeout: 10000 }).catch(() => {});
     await page.close();
-    if (!model || !hintShown || !hintDismissedByGesture || !verticalOrbitChangedImage || !result.desktopNavigation.visible || result.desktopNavigation.numberBadges !== 0 || result.desktopNavigation.labels.length !== 8 || result.desktopNavigation.bottom < result.desktopNavigation.viewportHeight - 75 || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Viewer/nav/gesture failure: ' + JSON.stringify(result));
+    if (!model || !hintShown || !hintDismissedByGesture || !verticalOrbitChangedImage || !result.desktopNavigation.visible || !result.desktopNavigation.fits || !result.desktopNavigation.desktopArHidden || result.desktopNavigation.numberBadges !== 0 || result.desktopNavigation.labels.length !== 8 || result.desktopNavigation.bottom < result.desktopNavigation.viewportHeight - 75 || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Viewer/nav/gesture failure: ' + JSON.stringify(result));
     return result;
   });
 
@@ -104,11 +111,15 @@ try {
     const response = await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForFunction(() => document.querySelector('#loader')?.dataset.hidden === 'true', { timeout: 50000 });
     const nav = await page.locator('#view-nav .view-button').count();
+    const initialHeading = await page.locator('#view-title').innerText();
+    const mobileARVisible = await page.locator('#xr-button').isVisible();
+    if (!mobileARVisible || initialHeading !== 'KTM 390 DUKE') throw Error('Mobile controls or commercial copy changed');
     await page.locator('#xr-button').click();
     await page.waitForURL('**/ar.html', { timeout: 10000 });
     await page.waitForSelector('#ar-guide:not([hidden])', { timeout: 25000 });
     const result = {
-      status: response?.status(), nav, arReached: page.url().endsWith('/ar.html'),
+      status: response?.status(), nav, mobileARVisible, initialHeading,
+      arReached: page.url().endsWith('/ar.html'),
       heading: await page.locator('#ar-guide-heading').innerText(), errors: getErrors()
     };
     await page.screenshot({ path: screenshots + '/mobile-ar.png' }).catch(() => {});

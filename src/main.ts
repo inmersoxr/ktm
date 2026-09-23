@@ -20,7 +20,7 @@ import {
 import type { BoundingBox } from 'playcanvas';
 
 import './style.css';
-import { DESKTOP_CAMERA_FOV, prepareViewerPose } from './viewer-camera';
+import { DESKTOP_CAMERA_FOV, DESKTOP_MODEL_SCALE, prepareViewerPose } from './viewer-camera';
 import { orbitAboveCenter } from './orbit-geometry';
 import type { CameraPose, ProductView } from './splat-config';
 import { CAMERA_POSE, PRODUCT_VIEWS, SPLAT_URL } from './splat-config';
@@ -181,7 +181,13 @@ const loadSavedViews = (): ProductView[] => {
 };
 
 let views: ProductView[] = loadSavedViews();
-const viewPose = <T extends CameraPose>(pose: T, index: number): T => prepareViewerPose(pose, index, isDesktopViewer);
+const viewPose = <T extends CameraPose>(pose: T, index: number): T => prepareViewerPose(
+    pose,
+    index,
+    isDesktopViewer,
+    splatPivot ? [splatCenter.x, splatCenter.y, splatCenter.z] : undefined,
+    canvas.clientWidth / Math.max(1, canvas.clientHeight)
+);
 
 const updateCameraPosition = () => {
     const yawRad = (yaw * Math.PI) / 180;
@@ -207,10 +213,17 @@ const getFrameDistance = (radius: number) => {
 };
 
 const clampDistance = (value: number) => {
-    const minDistance = isDesktopViewer
-        ? activeView <= 3 ? Math.max(sceneRadius * 0.95, 1.65) : Math.max(sceneRadius * 0.12, 0.24)
+    const publishedPose = views[activeView] ?? CAMERA_POSE;
+    const desktopInitial = isDesktopViewer && publishedPose && splatPivot
+        ? viewPose(publishedPose, activeView) : null;
+    const authoredDistance = desktopInitial
+        ? Math.hypot(...desktopInitial.position.map((v, i) => v - desktopInitial.target[i]))
+        : 0;
+    const minDistance = isDesktopViewer && desktopInitial
+        ? authoredDistance * (activeView <= 3 ? 0.7 : 0.35)
         : Math.max(sceneRadius * 0.02, 0.02);
-    const maxDistance = Math.max(sceneRadius * 40, 30);
+    const maxDistance = isDesktopViewer && desktopInitial
+        ? authoredDistance * 4 : Math.max(sceneRadius * 40, 30);
     return Math.max(minDistance, Math.min(maxDistance, value));
 };
 
@@ -286,7 +299,7 @@ const startViewTransition = (index: number) => {
     resetMotorcycleRotation();
     transition = { start: performance.now(), duration: 700, from: currentPose(), to: view };
     document.querySelectorAll<HTMLButtonElement>('.view-button').forEach((button, i) => button.classList.toggle('active', i === index));
-    document.querySelector('#view-kicker')!.textContent = `${String(view.number).padStart(2, '0')} · EXPLORAR`;
+    document.querySelector('#view-kicker')!.textContent = view.kicker;
     document.querySelector('#view-title')!.textContent = view.title;
     document.querySelector('#view-description')!.textContent = view.description;
     updateEditorLabel();
@@ -298,9 +311,9 @@ views.forEach((view, index) => {
     button.type = 'button';
     button.className = `view-button${index === 0 ? ' active' : ''}`;
     const label = document.createElement('small');
-    label.textContent = view.title;
+    label.textContent = view.navLabel;
     button.appendChild(label);
-    button.setAttribute('aria-label', view.title);
+    button.setAttribute('aria-label', view.navLabel);
     button.addEventListener('click', () => startViewTransition(index));
     viewNav?.appendChild(button);
 });
@@ -483,7 +496,7 @@ const frameSplat = (splat: Entity, aabb?: BoundingBox) => {
     if (aabb) {
         splat.getWorldTransform().transformPoint(aabb.center, worldAabbCenter);
         target.copy(worldAabbCenter);
-        sceneRadius = Math.max(aabb.halfExtents.length(), MIN_SCENE_RADIUS);
+        sceneRadius = Math.max(aabb.halfExtents.length() * (isDesktopViewer ? DESKTOP_MODEL_SCALE : 1), MIN_SCENE_RADIUS);
     } else {
         target.set(0, 0, 0);
         sceneRadius = 1;
@@ -833,12 +846,15 @@ splatAsset.on('load', () => {
     app.root.addChild(pivot);
     pivot.addChild(splat);
     splat.setLocalPosition(-splatCenter.x, -splatCenter.y, -splatCenter.z);
+    // Enlarge the actual Gaussian around its existing physical center.
+    // A mobile/touch viewer remains 1:1, and the RA page owns a separate model.
+    if (isDesktopViewer) pivot.setLocalScale(DESKTOP_MODEL_SCALE, DESKTOP_MODEL_SCALE, DESKTOP_MODEL_SCALE);
     splatPivot = pivot;
     modelYaw = 0;
 
     // scene radius scales zoom/pan limits even when the authored pose wins
     if (aabb) {
-        sceneRadius = Math.max(aabb.halfExtents.length(), MIN_SCENE_RADIUS);
+        sceneRadius = Math.max(aabb.halfExtents.length() * (isDesktopViewer ? DESKTOP_MODEL_SCALE : 1), MIN_SCENE_RADIUS);
     }
 
     const initialPose = views[0] ?? CAMERA_POSE;

@@ -529,7 +529,7 @@ const orbitAboveMotorcycle = (deltaY: number) => {
     // Move the camera and its aim rigidly around the motorcycle's real
     // bounds center, never around an offset saved-camera target.
     updateCameraPosition();
-    const pose = orbitAboveCenter(cameraPosition, target, splatCenter, -deltaY * ORBIT_SENSITIVITY);
+    const pose = orbitAboveCenter(cameraPosition, target, splatCenter, deltaY * ORBIT_SENSITIVITY);
     target.set(pose.target.x, pose.target.y, pose.target.z);
     const dx = pose.camera.x - target.x;
     const dy = pose.camera.y - target.y;

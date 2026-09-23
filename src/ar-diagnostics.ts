@@ -1,17 +1,16 @@
-// Actionable, non-invasive browser diagnostics for the KTM WebXR page.
-// Web pages cannot read ARCore's installed/updated state directly.
+// User-facing RA recovery: browser/device differences stay internal.
+// WebXR cannot inspect Android's installed AR service or Chrome flags directly.
 type XRProbe = {
     requestSession?: (mode: string) => Promise<unknown>;
     isSessionSupported?: (mode: string) => Promise<boolean>;
 };
 
-type Guide = {
-    heading: string;
-    message: string;
-    steps: string[];
-    link?: string;
-    linkText?: string;
+type Recovery = {
+    title: string;
+    explanation?: string;
     primary?: string;
+    link?: string;
+    linkLabel?: string;
 };
 
 export function createArDiagnostics(
@@ -19,8 +18,8 @@ export function createArDiagnostics(
     status: HTMLElement,
     panel: HTMLElement
 ) {
-    const heading = panel.querySelector<HTMLElement>('#ar-guide-heading')!;
-    const message = panel.querySelector<HTMLElement>('#ar-guide-message')!;
+    const title = panel.querySelector<HTMLElement>('#ar-guide-heading')!;
+    const explanation = panel.querySelector<HTMLElement>('#ar-guide-message')!;
     const steps = panel.querySelector<HTMLOListElement>('#ar-guide-steps')!;
     const link = panel.querySelector<HTMLAnchorElement>('#ar-guide-link')!;
     const settings = panel.querySelector<HTMLButtonElement>('#ar-guide-settings')!;
@@ -29,244 +28,191 @@ export function createArDiagnostics(
     const ua = navigator.userAgent;
     const android = /Android/i.test(ua);
     const embedded = /Instagram|FBAN|FBAV|FB_IAB|Messenger|TikTok|Line\//i.test(ua);
-    const chrome = /Chrome\/[0-9]+/i.test(ua) && !/SamsungBrowser|EdgA\/|OPR\/|UCBrowser/i.test(ua) && !embedded;
-    const arStore = 'https://play.google.com/store/apps/details?id=com.google.ar.core';
+    const chrome = /Chrome\/[0-9]+/i.test(ua) &&
+        !/SamsungBrowser|EdgA\/|OPR\/|UCBrowser/i.test(ua) && !embedded;
     const chromeStore = 'https://play.google.com/store/apps/details?id=com.android.chrome';
+    const arStore = 'https://play.google.com/store/apps/details?id=com.google.ar.core';
 
     let support: boolean | null = null;
+    let checking = false;
+    let busy = false;
     let modelLoaded = false;
-    let waiting = false;
-    let issue = false;
-    let advancedFeatures = true;
-    let mustOpenChrome = android && embedded;
+    let needsChrome = android && embedded;
+    let lastFailure = false;
 
-    const chromeSteps = [
-        'En Chrome, toca ⋮ → Configuración → Configuración de sitios → Cámara. Permite la cámara para esta página.',
-        'Si ya bloqueaste esta página, tócala en la lista de sitios y restablece sus permisos.',
-        'En los ajustes del teléfono: Aplicaciones → Chrome → Permisos → Cámara. Comprueba que Chrome tenga permiso.',
-        'Si modificaste las funciones experimentales de Chrome, abre chrome://flags y restablece las que hayas desactivado. No necesitas activar opciones experimentales para usar WebXR normal.'
-    ];
-
-    const guide = (data: Guide) => {
-        issue = true;
-        status.textContent = data.message;
-        heading.textContent = data.heading;
-        message.textContent = data.message;
-        steps.replaceChildren();
-        for (const item of data.steps) {
-            const li = document.createElement('li');
-            li.textContent = item;
-            steps.appendChild(li);
-        }
+    const showHelp = (info: Recovery) => {
+        busy = false;
+        lastFailure = true;
         panel.hidden = false;
+        panel.classList.add('compact');
+        status.hidden = true; // Never repeat the same error above the recovery panel.
+        title.textContent = info.title;
+        explanation.textContent = info.explanation ?? '';
+        explanation.hidden = !info.explanation;
+        steps.replaceChildren();
+        steps.hidden = true;
+        settings.hidden = true;
         settingsPanel.hidden = true;
-        settings.hidden = !android;
-        link.hidden = !data.link;
-        if (data.link) {
-            link.href = data.link;
-            link.textContent = data.linkText ?? 'Abrir';
+        link.hidden = !info.link;
+        if (info.link) {
+            link.href = info.link;
+            link.textContent = info.linkLabel ?? 'Continuar';
         } else {
             link.removeAttribute('href');
         }
-        startButton.textContent = data.primary ?? 'Volver a comprobar';
+        startButton.textContent = info.primary ?? 'Reintentar RA';
         startButton.disabled = false;
     };
 
-    const clear = () => {
-        issue = false;
+    const ready = () => {
+        busy = false;
+        lastFailure = false;
         panel.hidden = true;
-        settingsPanel.hidden = true;
+        status.hidden = false;
         startButton.textContent = 'Iniciar RA';
         startButton.disabled = false;
-        status.textContent = modelLoaded ? 'Modelo listo. Pulsa “Iniciar RA”.' : 'RA disponible. Cargando motocicleta…';
+        status.textContent = modelLoaded ? 'Listo para colocar la moto.' : 'Preparando la motocicleta…';
     };
 
-    const chromeGuide = (updated = false) => guide({
-        heading: updated ? 'Revisa Chrome' : 'Abrir en Chrome',
-        message: updated
-            ? 'Chrome no ofrece WebXR en esta configuración. Actualiza Chrome y revisa los permisos de esta página.'
-            : 'Abre esta experiencia directamente en Chrome para utilizar la realidad aumentada.',
-        steps: updated
-            ? ['Actualiza Chrome desde Google Play.', 'Revisa los permisos de cámara en Chrome y en Android.', 'Regresa a la experiencia y vuelve a comprobar.']
-            : ['Pulsa «Abrir en Chrome». Si tu navegador bloquea la apertura, utiliza el menú ⋮ → Abrir en el navegador.', 'Regresa aquí después de abrir Chrome.'],
+    const browserHelp = (suggestUpdate: boolean) => showHelp({
+        title: suggestUpdate ? 'Actualiza el navegador' : 'Abre la experiencia en Chrome',
+        explanation: suggestUpdate ? 'Después vuelve a esta página.' : 'Así podrás utilizar la cámara del teléfono.',
+        primary: suggestUpdate ? 'Volver a comprobar' : 'Abrir en Chrome',
         link: chromeStore,
-        linkText: 'Instalar o actualizar Chrome',
-        primary: updated ? 'Volver a comprobar' : 'Abrir en Chrome'
-    });
-
-    const servicesGuide = (permissionBlocked = false) => guide({
-        heading: permissionBlocked ? 'Revisa los permisos de Chrome' : 'Comprobar RA y Chrome',
-        message: permissionBlocked
-            ? 'La cámara figura bloqueada. Revisa los permisos de Chrome antes de iniciar RA.'
-            : 'Chrome no ha podido iniciar RA. Comprueba los servicios de RA y las configuraciones del navegador.',
-        steps: permissionBlocked ? chromeSteps : [
-            'Pulsa «Comprobar servicios de RA». Google Play indicará si necesitas instalar, habilitar o actualizar el componente.',
-            'Revisa en Chrome los permisos de cámara de esta página y en Android los permisos de Chrome.',
-            'Al volver aquí, pulsa «Volver a comprobar».'
-        ],
-        link: permissionBlocked ? undefined : arStore,
-        linkText: permissionBlocked ? undefined : 'Comprobar servicios de RA',
-        primary: permissionBlocked || support === false ? 'Volver a comprobar' : 'Reintentar RA'
+        linkLabel: 'Actualizar Chrome'
     });
 
     const cameraPermission = async () => {
         if (!navigator.permissions?.query) return 'unknown';
         try {
             return (await navigator.permissions.query({ name: 'camera' as PermissionName })).state;
-        } catch {
-            return 'unknown';
-        }
+        } catch { return 'unknown'; }
     };
 
     const check = async () => {
-        if (waiting) return;
-        waiting = true;
-        support = null;
+        if (checking || busy || document.body.classList.contains('xr-active')) return;
+        checking = true;
         try {
-            if (android && embedded) {
-                mustOpenChrome = true;
-                chromeGuide();
+            if (embedded && android) {
+                needsChrome = true;
+                browserHelp(false);
                 return;
             }
             if (!window.isSecureContext) {
-                guide({
-                    heading: 'La conexión necesita HTTPS',
-                    message: 'Abre la versión HTTPS de esta página para utilizar la cámara y WebXR.',
-                    steps: ['Utiliza la dirección segura HTTPS de esta experiencia.', 'Una vez abierta, vuelve a intentar.']
-                });
+                showHelp({title:'Necesitamos una conexión segura',
+                    explanation:'Abre esta página mediante HTTPS.',primary:'Volver a comprobar'});
                 return;
             }
             if (!xr?.requestSession) {
                 if (android) {
-                    mustOpenChrome = !chrome;
-                    chromeGuide(chrome);
+                    needsChrome = !chrome;
+                    browserHelp(chrome);
                 } else {
-                    guide({
-                        heading: 'WebXR no está habilitado',
-                        message: 'Este navegador no ofrece una sesión WebXR para la experiencia.',
-                        steps: ['Abre esta página en un navegador con WebXR y vuelve a comprobar.']
-                    });
+                    showHelp({title:'La realidad aumentada no está disponible en este navegador',
+                        explanation:'Ábrela en un navegador que permita usar la cámara en RA.',
+                        primary:'Volver a comprobar'});
                 }
                 return;
             }
-            if (android && (await cameraPermission()) === 'denied') {
-                servicesGuide(true);
+            needsChrome = false;
+            if (await cameraPermission() === 'denied') {
+                showHelp({title:'Permite el acceso a la cámara',
+                    explanation:'Abre los permisos de este sitio en el navegador y permite la cámara.',
+                    primary:'Volver a comprobar'});
                 return;
             }
-            if (typeof xr.isSessionSupported === 'function') {
+            if (xr.isSessionSupported) {
                 try {
                     support = await xr.isSessionSupported('immersive-ar');
-                } catch (error) {
-                    console.warn('WebXR support check failed:', error);
+                } catch (e) {
+                    console.warn('RA capability check was inconclusive:',e);
                     support = null;
                 }
                 if (support === false) {
                     if (android && !chrome) {
-                        mustOpenChrome = true;
-                        chromeGuide();
+                        needsChrome = true;
+                        browserHelp(false);
                     } else {
-                        servicesGuide();
+                        showHelp({title:'Prepara tu teléfono para usar RA',
+                            explanation:'Comprueba que la realidad aumentada esté actualizada.',
+                            link:android ? arStore : undefined,
+                            linkLabel:'Comprobar RA del teléfono',
+                            primary:'Volver a comprobar'});
                     }
                     return;
                 }
             }
-            mustOpenChrome = false;
-            clear();
-        } finally {
-            waiting = false;
-        }
+            ready();
+        } finally { checking = false; }
     };
 
     const openChrome = () => {
+        // Browser intents must execute synchronously inside the actual tap.
         const url = new URL(window.location.href);
         const target = url.host + url.pathname + url.search + url.hash;
-        // Android intents require a user tap; internal browsers can still block them.
-        window.location.href = 'intent://' + target +
-            '#Intent;scheme=' + (url.protocol === 'http:' ? 'http' : 'https') +
+        window.location.href = 'intent://' + target + '#Intent;scheme=' +
+            (url.protocol === 'http:' ? 'http' : 'https') +
             ';package=com.android.chrome;S.browser_fallback_url=' +
             encodeURIComponent(url.href) + ';end';
     };
 
     const handleError = (error: Error) => {
+        busy = false;
         const name = error.name || 'Error';
-        const detail = error.message || String(error);
-        console.error('KTM WebXR session failed:', { name, detail, browser: ua, anchors: advancedFeatures });
-        if (name === 'NotSupportedError' && advancedFeatures) {
-            advancedFeatures = false;
-            guide({
-                heading: 'Probar una configuración más sencilla',
-                message: 'La sesión rechazó una función avanzada. Reintenta sin anclajes, manteniendo la detección de superficies.',
-                steps: ['Pulsa «Reintentar RA». Si vuelve a fallar, la página mostrará las comprobaciones de Chrome y RA.'],
-                primary: 'Reintentar RA'
-            });
-        } else if (name === 'NotAllowedError' || name === 'SecurityError') {
-            guide({
-                heading: 'Permiso de cámara o RA bloqueado',
-                message: 'Chrome no recibió permiso para iniciar la sesión. Revisa los permisos del sitio y del teléfono.',
-                steps: chromeSteps,
-                primary: 'Reintentar RA'
-            });
+        console.error('RA startup error:', {name, message:error.message, browser:ua});
+        if (name === 'NotAllowedError' || name === 'SecurityError') {
+            showHelp({title:'Permite el acceso a la cámara',
+                explanation:'Activa la cámara en los permisos de este sitio y vuelve a intentarlo.'});
         } else if (name === 'NotReadableError') {
-            guide({
-                heading: 'La cámara está ocupada',
-                message: 'No se pudo acceder a la cámara. Cierra las otras aplicaciones que la estén utilizando.',
-                steps: ['Cierra las aplicaciones que utilizan la cámara.', ...chromeSteps.slice(0, 3)],
-                primary: 'Reintentar RA'
-            });
-        } else if (android && !chrome) {
-            mustOpenChrome = true;
-            chromeGuide();
-        } else if (name === 'InvalidStateError' || name === 'AbortError') {
-            guide({
-                heading: 'La sesión fue interrumpida',
-                message: 'Espera a que termine la sesión anterior y vuelve a intentar.',
-                steps: ['Cierra cualquier sesión RA activa.', 'Pulsa «Reintentar RA».'],
-                primary: 'Reintentar RA'
-            });
+            showHelp({title:'La cámara está ocupada',
+                explanation:'Cierra otras aplicaciones que utilicen la cámara y vuelve a intentarlo.'});
+        } else if (android && !chrome && name === 'NotSupportedError') {
+            needsChrome = true;
+            browserHelp(false);
+        } else if (name === 'NotSupportedError') {
+            showHelp({title:'No pudimos abrir la realidad aumentada',
+                explanation:'Comprueba que la RA del teléfono esté actualizada.',
+                link:android ? arStore : undefined,
+                linkLabel:'Comprobar RA del teléfono'});
         } else {
-            servicesGuide();
+            showHelp({title:'No pudimos iniciar la cámara',
+                explanation:'Puedes volver a intentarlo.',primary:'Reintentar RA'});
         }
     };
 
-    settings.addEventListener('click', () => {
-        settingsPanel.hidden = !settingsPanel.hidden;
-    });
     document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && !waiting && !document.body.classList.contains('xr-active')) void check();
+        // Recheck after returning from system settings or the Play Store.
+        if (!document.hidden && !busy) void check();
     });
-
     return {
-        get useAnchors() { return advancedFeatures; },
-        get needsChrome() { return mustOpenChrome; },
-        get canAttempt() { return !!xr?.requestSession && (support !== false || issue && advancedFeatures === false); },
+        get needsChrome() { return needsChrome; },
+        get canAttempt() { return !!xr?.requestSession && support !== false; },
         check,
         openChrome,
         handleError,
         requesting() {
-            issue = false;
+            busy = true;
+            lastFailure = false;
             panel.hidden = true;
+            status.hidden = false;
+            status.textContent = 'Preparando realidad aumentada…';
             startButton.disabled = true;
-            status.textContent = 'Solicitando sesión RA…';
         },
         modelReady() {
             modelLoaded = true;
-            if (!issue && !waiting && support !== false && !document.body.classList.contains('xr-active')) clear();
+            if (!lastFailure && !busy && support !== false && !document.body.classList.contains('xr-active')) ready();
         },
         started() {
-            issue = false;
+            busy = false;
+            lastFailure = false;
             panel.hidden = true;
+            status.hidden = false;
         },
-        ended() {
-            void check();
-        },
+        ended() { busy = false; void check(); },
         showInitError(detail: string) {
-            guide({
-                heading: 'No se pudo iniciar la experiencia',
-                message: 'La página no pudo preparar el visor RA. Vuelve a intentarlo o abre el visor 3D.',
-                steps: ['Vuelve a cargar la página.', 'Si el problema continúa, vuelve al visor 3D.'],
-                primary: 'Volver a comprobar'
-            });
-            console.error('AR initialization:', detail);
+            console.error('RA initialization error:', detail);
+            showHelp({title:'No se pudo abrir la experiencia',
+                explanation:'Actualiza la página e inténtalo de nuevo.',primary:'Recargar'});
         }
     };
 }

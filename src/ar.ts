@@ -25,7 +25,7 @@ import type { BoundingBox, Quat, Vec3 } from 'playcanvas';
 
 import { SPLAT_URL } from './splat-config';
 import { createArDiagnostics } from './ar-diagnostics';
-import { acceptFloorSample, createFloorTracker, FLOOR_HIT_TIMEOUT_MS, resetFloorTracker } from './ar-floor';
+import { acceptFloorSample, createFloorTracker, FLOOR_HIT_TIMEOUT_MS, isCurrentFloorRay, resetFloorTracker } from './ar-floor';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#ar-canvas');
 const startButton = document.querySelector<HTMLButtonElement>('#ar-start');
@@ -102,7 +102,7 @@ const startAr = () => {
         return;
     }
     if (bootstrapError) {
-        diagnostics.showInitError(bootstrapError);
+        window.location.reload();
         return;
     }
     if (!diagnostics.canAttempt) {
@@ -123,7 +123,9 @@ const startAr = () => {
     }
 
     xr.start(arCamera.camera, XRTYPE_AR, XRSPACE_LOCAL, {
-        anchors: diagnostics.useAnchors,
+        // Keep the initial session minimal on every phone. Hit testing
+        // remains available without asking for optional persistent anchors.
+        anchors: false,
         callback: (error: Error | null) => {
             if (error) diagnostics.handleError(error);
             else startButton.disabled = false;
@@ -209,6 +211,7 @@ let latestRotation: Quat | null = null;
 let latestHitResult: any = null;
 const floorTracker = createFloorTracker();
 let lastValidHitAt = 0;
+let lastHitEventAt = 0;
 let activeAnchor: any = null;
 let activeHitTestSource: any = null;
 let userScale = 1;
@@ -308,6 +311,7 @@ const discardFloorHit = () => {
     latestRotation = null;
     latestHitResult = null;
     lastValidHitAt = 0;
+    lastHitEventAt = 0;
     reticle.enabled = false;
 };
 
@@ -334,15 +338,15 @@ const placeAtLatestHit = () => {
     // Create the anchor from the same XRHitTestResult used by the reticle.
     // This is the PlayCanvas/WebXR reference implementation path for stable
     // placement against evolving ARCore world tracking.
-    if (!app.xr?.anchors.available) {
-        setStatus('KTM colocada, pero WebXR no habilitó Anchors en esta sesión.');
-        return;
-    }
+    // Optional world anchors should never be required for placement.
+    // Local-space tracking holds the model even on phones without anchors.
+    if (!app.xr?.anchors.available) return;
 
     app.xr.anchors.create(hitResult, (error, anchor) => {
         if (error || !anchor) {
             console.error(error);
-            setStatus('KTM colocada, pero no se pudo crear el anchor.');
+            // Placement already succeeded in local space; no visible warning.
+            // Keep the model where the user placed it.
             return;
         }
 
@@ -409,11 +413,17 @@ app.xr?.hitTest.on('available', () => {
                 if (placed) return;
                 // Reject walls, ceilings, drifting poses and feature points.
                 const now = performance.now();
-                if (!hitTestResult || !acceptFloorSample(floorTracker, position, rotation, now)) {
-                    latestPosition = null;
-                    latestRotation = null;
-                    latestHitResult = null;
-                    reticle.enabled = false;
+                // Only consume the first hit in a frame; later intersections
+                // must never replace a closer tabletop with a distant plane.
+                if (now - lastHitEventAt < 7) return;
+                lastHitEventAt = now;
+                const cameraPosition = camera.getPosition();
+                const forward = camera.forward;
+                const valid = !!hitTestResult &&
+                    isCurrentFloorRay(position, cameraPosition, forward) &&
+                    acceptFloorSample(floorTracker, position, rotation, now);
+                if (!valid) {
+                    discardFloorHit();
                     return;
                 }
                 latestPosition = position.clone();
@@ -468,10 +478,10 @@ app.xr?.on('end', () => {
 });
 
 // When hit-test events stop, remove the old ring so it cannot float.
-app.on('update', () => {
+app.xr?.on('update', () => {
     if (!placed && reticle.enabled && performance.now() - lastValidHitAt > FLOOR_HIT_TIMEOUT_MS) {
         discardFloorHit();
-        setStatus('Busca un suelo horizontal para colocar la KTM.');
+        setStatus('Apunta a una mesa o al suelo.');
     }
 });
 

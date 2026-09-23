@@ -16,8 +16,14 @@
         #ar-start { align-self:center; background:#ff5a00; color:#fff; padding:15px 24px; }
         body.xr-active #ar-ui { pointer-events:none; }
 
-        #ar-guide { pointer-events:auto; width:min(440px,calc(100vw - 36px)); box-sizing:border-box; align-self:center; margin-top:auto; margin-bottom:12px; padding:16px 18px; border:1px solid rgba(255,255,255,.18); border-radius:16px; background:rgba(17,20,24,.96); box-shadow:0 12px 36px rgba(0,0,0,.5); color:#fff; max-height:min(64vh,550px); overflow-y:auto; }
+        #ar-guide { pointer-events:auto; width:min(380px,calc(100vw - 36px)); box-sizing:border-box; align-self:center; margin-top:auto; margin-bottom:12px; padding:16px 18px; border:1px solid rgba(255,255,255,.18); border-radius:16px; background:rgba(17,20,24,.96); box-shadow:0 12px 36px rgba(0,0,0,.5); color:#fff; max-height:min(64vh,550px); overflow-y:auto; }
         #ar-guide[hidden], #ar-guide-link[hidden], #ar-guide-settings[hidden], #ar-chrome-steps[hidden] { display:none!important; }
+        #ar-guide.compact { padding:15px; max-height:35vh; margin-bottom:16px; }
+        #ar-guide.compact h2 { font-size:16px; margin:0 0 5px; }
+        #ar-guide.compact p { font-size:12px; line-height:1.45; margin:0 0 7px; }
+        #ar-guide.compact #ar-guide-link { padding:10px 12px; font-size:12px; }
+        #ar-guide.compact ol, #ar-guide.compact #ar-guide-settings, #ar-guide.compact #ar-chrome-steps { display:none!important; }
+        #ar-status[hidden] { display:none; }
         #ar-guide h2 { margin:0 0 8px; font-size:19px; line-height:1.2; }
         #ar-guide p, #ar-guide li { font-size:13px; line-height:1.5; }
         #ar-guide p { margin:0 0 9px; color:#e5e7eb; }

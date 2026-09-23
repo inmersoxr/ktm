@@ -128,6 +128,35 @@ try {
     return result;
   });
 
+  await trial('mobile landscape stays mobile', async () => {
+    const context=await browser.newContext({
+      viewport:{width:1536,height:700},
+      isMobile:true,
+      hasTouch:true,
+      userAgent:'Mozilla/5.0 (Linux; Android 15; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36'
+    });
+    const page=await context.newPage();
+    const getErrors=attach(page,'mobile landscape');
+    await page.goto(base,{waitUntil:'domcontentloaded',timeout:30000});
+    await page.waitForFunction(()=>document.querySelector('#loader')?.dataset.hidden==='true',{timeout:50000});
+    const result=await page.evaluate(()=>({
+      arVisible:getComputedStyle(document.querySelector('#xr-button')).display!=='none',
+      touch:matchMedia('(pointer:coarse)').matches,
+      desktop:matchMedia('(pointer:fine)').matches,
+      title:document.querySelector('#view-title')?.textContent,
+      labels:[...document.querySelectorAll('#view-nav .view-button')].map(n=>n.textContent?.trim()),
+      noDesktopGrid:getComputedStyle(document.querySelector('#view-nav')).display!=='grid'
+    }));
+    await page.screenshot({path:screenshots+'/viewer-mobile-landscape.png'}).catch(()=>{});
+    result.errors=getErrors();
+    await context.close();
+    if(!result.arVisible||!result.touch||result.desktop||result.title!=='KTM 390 DUKE'||
+       result.labels.length!==8||!result.noDesktopGrid||result.errors.some(e=>e.startsWith('PAGE:'))){
+      throw Error('Mobile landscape regression: '+JSON.stringify(result));
+    }
+    return result;
+  });
+
   await trial('AR desktop diagnosis', async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 780 } });
     const getErrors = attach(page, 'AR desktop');

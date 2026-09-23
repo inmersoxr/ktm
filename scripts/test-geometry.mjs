@@ -85,7 +85,7 @@ assert.equal(desktopCamera.DESKTOP_CAMERA_FOV,13);
 close(first.fov,13);
 const sourceDistance=Math.hypot(...sourcePose.position.map((x,i)=>x-sourcePose.target[i]));
 const desktopDistance=Math.hypot(...first.position.map((x,i)=>x-first.target[i]));
-assert.ok(desktopDistance>=sourceDistance*5.5);
+assert.ok(desktopDistance>=sourceDistance*11);
 assert.ok(desktopCamera.DESKTOP_MODEL_SCALE/desktopDistance < 1/sourceDistance);
 assert.notDeepEqual(Array.from(first.target),Array.from(sourcePose.target));
 const mobile=desktopCamera.prepareViewerPose(sourcePose,0,false,c,16/9);

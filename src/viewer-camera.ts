@@ -21,7 +21,7 @@ export function prepareViewerPose<T extends CameraPose>(
 
     const unit = delta.map((v) => v / sourceDistance);
     const cameraDistance = index === 0
-        ? sourceDistance * 5.6
+        ? sourceDistance * 11.2
         : sourceDistance * DESKTOP_MODEL_SCALE *
           (Math.tan(pose.fov * Math.PI / 360) / Math.tan(DESKTOP_CAMERA_FOV * Math.PI / 360)) /
           (index <= 3 ? 2.15 : 1.05);

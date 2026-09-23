@@ -52,6 +52,7 @@ try {
     let verticalOrbitChangedImage = false;
     let hintDismissedByGesture = false;
     if (model) {
+      await page.screenshot({ path: screenshots + '/viewer-initial.png', timeout: 10000 }).catch(() => {});
       const before = await page.locator('#app').screenshot();
       await page.mouse.move(640, 420);
       await page.mouse.down();

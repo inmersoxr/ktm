@@ -217,17 +217,8 @@ const getFrameDistance = (radius: number) => {
 };
 
 const clampDistance = (value: number) => {
-    const publishedPose = views[activeView] ?? CAMERA_POSE;
-    const desktopInitial = isDesktopViewer && publishedPose && splatPivot
-        ? viewPose(publishedPose, activeView) : null;
-    const authoredDistance = desktopInitial
-        ? Math.hypot(...desktopInitial.position.map((v, i) => v - desktopInitial.target[i]))
-        : 0;
-    const minDistance = isDesktopViewer && desktopInitial
-        ? authoredDistance * (activeView <= 3 ? 0.7 : 0.35)
-        : Math.max(sceneRadius * 0.02, 0.02);
-    const maxDistance = isDesktopViewer && desktopInitial
-        ? authoredDistance * 4 : Math.max(sceneRadius * 40, 30);
+    const minDistance = Math.max(sceneRadius * 0.02, 0.02);
+    const maxDistance = Math.max(sceneRadius * 40, 30);
     return Math.max(minDistance, Math.min(maxDistance, value));
 };
 
@@ -265,6 +256,12 @@ const applyCameraPose = (pose: CameraPose) => {
     }
 
     updateCamera();
+    // Capture the applied, not merely requested, camera pose for parity tests.
+    canvas.dataset.cameraPose = JSON.stringify({
+        position: [cameraPosition.x, cameraPosition.y, cameraPosition.z],
+        target: [target.x, target.y, target.z],
+        fov
+    });
     return true;
 };
 
@@ -293,6 +290,8 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const startViewTransition = (index: number) => {
     activeView = index;
     const view = viewPose(views[index], index);
+    // Re-entering a saved view restores the exact authored product size.
+    if (splatPivot && desktopModelZoom !== 1) setDesktopModelZoom(1);
 
     // Presets are absolute world-space poses. Clear any residual navigation
     // state so the destination never depends on where the user was before.
@@ -502,7 +501,7 @@ const frameSplat = (splat: Entity, aabb?: BoundingBox) => {
     if (aabb) {
         splat.getWorldTransform().transformPoint(aabb.center, worldAabbCenter);
         target.copy(worldAabbCenter);
-        sceneRadius = Math.max(aabb.halfExtents.length() * (isDesktopViewer ? DESKTOP_MODEL_SCALE : 1), MIN_SCENE_RADIUS);
+        sceneRadius = Math.max(aabb.halfExtents.length(), MIN_SCENE_RADIUS);
     } else {
         target.set(0, 0, 0);
         sceneRadius = 1;
@@ -573,8 +572,8 @@ const resetMotorcycleRotation = () => {
 };
 const setDesktopModelZoom = (value: number) => {
     if (!isDesktopViewer || !splatPivot) return;
-    desktopModelZoom = Math.max(.8, Math.min(1.48, value));
-    const scale = DESKTOP_MODEL_SCALE * desktopModelZoom;
+    desktopModelZoom = Math.max(0.8, Math.min(2.2, value));
+    const scale = desktopModelZoom;
     splatPivot.setLocalScale(scale, scale, scale);
     canvas.dataset.modelScale = String(scale);
 };
@@ -781,10 +780,10 @@ const resize = () => {
     canvas.dataset.viewerLayout = isDesktopViewer ? 'desktop' : 'mobile';
     desktopModelZoom = 1;
     if (splatPivot) {
-        const scale = isDesktopViewer ? DESKTOP_MODEL_SCALE : 1;
-        splatPivot.setLocalScale(scale, scale, scale);
-        canvas.dataset.modelScale = String(scale);
-        if (splatBounds) sceneRadius = Math.max(splatBounds.halfExtents.length() * scale, MIN_SCENE_RADIUS);
+        // The only difference after a layout switch is the interface.
+        splatPivot.setLocalScale(1, 1, 1);
+        canvas.dataset.modelScale = '1';
+        if (splatBounds) sceneRadius = Math.max(splatBounds.halfExtents.length(), MIN_SCENE_RADIUS);
         transition = null;
         applyCameraPose(viewPose(views[activeView] ?? CAMERA_POSE!, activeView));
     }
@@ -888,17 +887,17 @@ splatAsset.on('load', () => {
     app.root.addChild(pivot);
     pivot.addChild(splat);
     splat.setLocalPosition(-splatCenter.x, -splatCenter.y, -splatCenter.z);
-    // Enlarge the actual Gaussian around its existing physical center.
-    // A mobile/touch viewer remains 1:1, and the RA page owns a separate model.
-    if (isDesktopViewer) pivot.setLocalScale(DESKTOP_MODEL_SCALE, DESKTOP_MODEL_SCALE, DESKTOP_MODEL_SCALE);
+    // Published mobile camera poses target the model at its original scale.
+    // Keep that transform on desktop, mobile and desktop-site phones alike.
+    pivot.setLocalScale(1, 1, 1);
     splatPivot = pivot;
     canvas.dataset.viewerLayout = isDesktopViewer ? 'desktop' : 'mobile';
-    canvas.dataset.modelScale = String(isDesktopViewer ? DESKTOP_MODEL_SCALE : 1);
+    canvas.dataset.modelScale = '1';
     modelYaw = 0;
 
     // scene radius scales zoom/pan limits even when the authored pose wins
     if (aabb) {
-        sceneRadius = Math.max(aabb.halfExtents.length() * (isDesktopViewer ? DESKTOP_MODEL_SCALE : 1), MIN_SCENE_RADIUS);
+        sceneRadius = Math.max(aabb.halfExtents.length(), MIN_SCENE_RADIUS);
     }
 
     const initialPose = views[0] ?? CAMERA_POSE;

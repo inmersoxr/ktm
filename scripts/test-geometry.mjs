@@ -76,29 +76,25 @@ assert.match(arSrc,/anchors: false/);
 console.log('PASS: live floor ray, fast expiry, inverted gesture and no advanced AR setup.');
 
 
-const desktopCamera=loadTs('../src/viewer-camera.ts');
-const sourcePose={position:[3.68,1.55,2.02],target:[1.71,1.2,-1.08],fov:75};
-const c=[1.14,.4,-.25];
-const first=desktopCamera.prepareViewerPose(sourcePose,0,true,c,16/9);
-assert.equal(desktopCamera.DESKTOP_MODEL_SCALE,4);
-assert.equal(desktopCamera.DESKTOP_CAMERA_FOV,13);
-close(first.fov,13);
-const sourceDistance=Math.hypot(...sourcePose.position.map((x,i)=>x-sourcePose.target[i]));
-const desktopDistance=Math.hypot(...first.position.map((x,i)=>x-first.target[i]));
-assert.ok(desktopDistance>=sourceDistance*11);
-assert.ok(desktopCamera.DESKTOP_MODEL_SCALE/desktopDistance < 1/sourceDistance);
-assert.notDeepEqual(Array.from(first.target),Array.from(sourcePose.target));
-const mobile=desktopCamera.prepareViewerPose(sourcePose,0,false,c,16/9);
-close(mobile.fov,75);
-for(let i=0;i<3;i++){
-    close(mobile.position[i],sourcePose.position[i]);
-    close(mobile.target[i],sourcePose.target[i]);
+const authored = loadTs('../src/splat-config.ts');
+const canonicalCamera = loadTs('../src/viewer-camera.ts');
+assert.equal(canonicalCamera.DESKTOP_MODEL_SCALE,1);
+assert.equal(authored.PRODUCT_VIEWS.length,8);
+for (let i=0;i<authored.PRODUCT_VIEWS.length;i++) {
+    const pose = authored.PRODUCT_VIEWS[i];
+    const d = canonicalCamera.prepareViewerPose(pose,i,true,[1.14,.4,-.25],16/9);
+    const m = canonicalCamera.prepareViewerPose(pose,i,false,undefined,412/915);
+    assert.deepEqual(Array.from(d.position),Array.from(pose.position));
+    assert.deepEqual(Array.from(d.target),Array.from(pose.target));
+    close(d.fov,pose.fov);
+    assert.deepEqual(Array.from(d.position),Array.from(m.position));
+    assert.deepEqual(Array.from(d.target),Array.from(m.target));
+    close(d.fov,m.fov);
 }
-const productSource=readFileSync(new URL('../src/splat-config.ts',import.meta.url),'utf8');
-assert.doesNotMatch(productSource,/Vista de producto en tres cuartos|proporciones vistas desde/);
-const viewerSource=readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
-assert.match(viewerSource,/pivot.setLocalScale\(DESKTOP_MODEL_SCALE/);
-console.log('PASS: desktop physical scale, telephoto camera, separate mobile presets and commercial copy.');
+const appliedSource=readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
+assert.match(appliedSource,/canvas\.dataset\.cameraPose/);
+assert.doesNotMatch(appliedSource,/pivot\.setLocalScale\(DESKTOP_MODEL_SCALE/);
+console.log('PASS: desktop and mobile share all 8 authored positions, targets, FOVs and scale 1.');
 
 const activeLayoutSource=readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
 assert.match(activeLayoutSource,/desktopLayout\.matches/);

@@ -18,6 +18,7 @@ if (!process.env.KTM_SMOKE_URL) {
   }
 }
 const results = [];
+let desktopPoseSamples = null;
 const browser = await chromium.launch({
   headless: true,
   args: ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']
@@ -112,10 +113,20 @@ try {
       graphics: await page.evaluate(() => ({ webgpu: !!navigator.gpu, webgl2: !!document.createElement('canvas').getContext('webgl2') })),
       errors: getErrors()
     };
+    desktopPoseSamples = [];
+    for(let i=0;i<8;i++){
+      await page.locator('#view-nav .view-button').nth(i).click();
+      await page.waitForTimeout(900);
+      desktopPoseSamples.push(await page.locator('#app').evaluate(el=>({
+        pose:JSON.parse(el.dataset.cameraPose ?? '{}'),
+        scale:Number(el.dataset.modelScale)
+      })));
+    }
+    result.desktopPoseCount = desktopPoseSamples.length;
     await page.screenshot({ path: screenshots + '/viewer.png', timeout: 10000 }).catch(() => {});
     await page.close();
-    if (!model || !hintHidden || !hintDismissedByGesture || !verticalOrbitChangedImage || result.beforeZoom.layout !== 'desktop' || result.beforeZoom.fov !== 13 || result.beforeZoom.scale !== 4 ||
-      result.afterZoom.fov !== 13 || result.afterZoom.scale <= 4 ||
+    if (!model || !hintHidden || !hintDismissedByGesture || !verticalOrbitChangedImage || result.beforeZoom.layout !== 'desktop' || result.beforeZoom.fov !== 75 || result.beforeZoom.scale !== 1 ||
+      result.afterZoom.fov !== 75 || result.afterZoom.scale <= 1 || result.desktopPoseCount!==8 ||
       !result.desktopNavigation.visible || !result.desktopNavigation.fits || !result.desktopNavigation.desktopArHidden || result.desktopNavigation.numberBadges !== 0 || result.desktopNavigation.labels.length !== 8 || result.desktopNavigation.bottom < result.desktopNavigation.viewportHeight - 75 || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Viewer/nav/gesture failure: ' + JSON.stringify(result));
     return result;
   });
@@ -133,6 +144,26 @@ try {
     const response = await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForFunction(() => document.querySelector('#loader')?.dataset.hidden === 'true', { timeout: 50000 });
     const nav = await page.locator('#view-nav .view-button').count();
+    const mobilePoseSamples=[];
+    for(let i=0;i<8;i++){
+      await page.locator('#view-nav .view-button').nth(i).click();
+      await page.waitForTimeout(900);
+      mobilePoseSamples.push(await page.locator('#app').evaluate(el=>({
+        pose:JSON.parse(el.dataset.cameraPose ?? '{}'),
+        scale:Number(el.dataset.modelScale)
+      })));
+    }
+    if(!desktopPoseSamples || desktopPoseSamples.length!==mobilePoseSamples.length)
+      throw Error('Missing desktop camera samples for all 8 views');
+    for(let i=0;i<8;i++){
+      const d=desktopPoseSamples[i],m=mobilePoseSamples[i];
+      if(d.scale!==1||m.scale!==1)throw Error('Preset scale mismatched at view '+i);
+      for(const key of ['position','target'])for(let axis=0;axis<3;axis++){
+        if(!d.pose[key]||!m.pose[key]||Math.abs(d.pose[key][axis]-m.pose[key][axis])>1e-5)
+          throw Error('Actual camera differs at view '+i+': '+JSON.stringify({d,m}));
+      }
+      if(d.pose.fov!==m.pose.fov)throw Error('FOV differs at view '+i);
+    }
     const initialHeading = await page.locator('#view-title').innerText();
     const mobileARVisible = await page.locator('#xr-button').isVisible();
     if (!mobileARVisible || initialHeading !== 'KTM 390 DUKE') throw Error('Mobile controls or commercial copy changed');
@@ -141,6 +172,7 @@ try {
     await page.waitForSelector('#ar-guide:not([hidden])', { timeout: 25000 });
     const result = {
       status: response?.status(), nav, mobileARVisible, initialHeading,
+      poseParity:'8/8 actual mobile and desktop views identical',
       arReached: page.url().endsWith('/ar.html'),
       heading: await page.locator('#ar-guide-heading').innerText(), errors: getErrors()
     };
@@ -179,7 +211,7 @@ try {
     await page.screenshot({path:screenshots+'/viewer-phone-desktop.png'});
     result.errors=getErrors();
     await context.close();
-    if(result.layout!=='desktop'||result.fov!==13||result.scale!==4||!result.arHidden||
+    if(result.layout!=='desktop'||result.fov!==75||result.scale!==1||!result.arHidden||
        !result.grid||!result.eightFit||!result.helpHidden||result.textTop<result.logoBottom+10||
        !result.touch||result.errors.some(e=>e.startsWith('PAGE:'))){
       throw Error('Desktop layout on phone failed: '+JSON.stringify(result));

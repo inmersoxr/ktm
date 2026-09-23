@@ -116,7 +116,7 @@ try {
     desktopPoseSamples = [];
     for(let i=0;i<8;i++){
       await page.locator('#view-nav .view-button').nth(i).click();
-      await page.waitForTimeout(900);
+      await page.waitForFunction((viewIndex) => document.querySelector('#app')?.dataset.poseSettled === String(viewIndex),i,{timeout:15000});
       desktopPoseSamples.push(await page.locator('#app').evaluate(el=>({
         pose:JSON.parse(el.dataset.cameraPose ?? '{}'),
         scale:Number(el.dataset.modelScale)
@@ -147,7 +147,7 @@ try {
     const mobilePoseSamples=[];
     for(let i=0;i<8;i++){
       await page.locator('#view-nav .view-button').nth(i).click();
-      await page.waitForTimeout(900);
+      await page.waitForFunction((viewIndex) => document.querySelector('#app')?.dataset.poseSettled === String(viewIndex),i,{timeout:15000});
       mobilePoseSamples.push(await page.locator('#app').evaluate(el=>({
         pose:JSON.parse(el.dataset.cameraPose ?? '{}'),
         scale:Number(el.dataset.modelScale)

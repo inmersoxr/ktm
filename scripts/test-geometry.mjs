@@ -100,3 +100,8 @@ const activeLayoutSource=readFileSync(new URL('../src/main.ts',import.meta.url),
 assert.match(activeLayoutSource,/desktopLayout\.matches/);
 assert.match(activeLayoutSource,/setDesktopModelZoom/);
 console.log('PASS: screen-layout detection and model-scale zoom are enabled.');
+
+const settleSource=readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
+assert.match(settleSource,/canvas\.dataset\.poseSettled = 'pending'/);
+assert.match(settleSource,/canvas\.dataset\.poseSettled = String\(activeView\)/);
+console.log('PASS: pose parity is tested only after the actual view transition has completed.');

@@ -289,6 +289,7 @@ const currentPose = (): CameraPose => {
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const startViewTransition = (index: number) => {
     activeView = index;
+    canvas.dataset.poseSettled = 'pending';
     const view = viewPose(views[index], index);
     // Re-entering a saved view restores the exact authored product size.
     if (splatPivot && desktopModelZoom !== 1) setDesktopModelZoom(1);
@@ -813,6 +814,7 @@ app.on('update', (dt) => {
         if (raw >= 1) {
             applyCameraPose(to);
             transition = null;
+            canvas.dataset.poseSettled = String(activeView);
         }
         return;
     }

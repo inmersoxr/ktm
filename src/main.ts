@@ -70,7 +70,9 @@ const hideLoader = () => {
 };
 
 const device = await createGraphicsDevice(canvas, {
-    deviceTypes: [DEVICETYPE_WEBGL2, DEVICETYPE_WEBGPU],
+    deviceTypes: /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+        ? [DEVICETYPE_WEBGL2, DEVICETYPE_WEBGPU]
+        : [DEVICETYPE_WEBGPU, DEVICETYPE_WEBGL2],
 
     // Gaussian splats do not benefit from antialiasing and it is expensive.
     antialias: false

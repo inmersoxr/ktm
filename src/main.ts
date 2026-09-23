@@ -20,6 +20,7 @@ import {
 import type { BoundingBox } from 'playcanvas';
 
 import './style.css';
+import { orbitAboveCenter } from './orbit-geometry';
 import type { CameraPose, ProductView } from './splat-config';
 import { CAMERA_POSE, PRODUCT_VIEWS, SPLAT_URL } from './splat-config';
 
@@ -524,9 +525,18 @@ const rotateMotorcycle = (deltaX: number) => {
 };
 
 const orbitAboveMotorcycle = (deltaY: number) => {
-    if (deltaY === 0) return;
-    // Drag up to look down on the motorcycle; never orbit underneath it.
-    pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, pitch - deltaY * ORBIT_SENSITIVITY));
+    if (deltaY === 0 || !splatPivot) return;
+    // Move the camera and its aim rigidly around the motorcycle's real
+    // bounds center, never around an offset saved-camera target.
+    updateCameraPosition();
+    const pose = orbitAboveCenter(cameraPosition, target, splatCenter, -deltaY * ORBIT_SENSITIVITY);
+    target.set(pose.target.x, pose.target.y, pose.target.z);
+    const dx = pose.camera.x - target.x;
+    const dy = pose.camera.y - target.y;
+    const dz = pose.camera.z - target.z;
+    distance = Math.max(1e-6, Math.hypot(dx, dy, dz));
+    yaw = Math.atan2(dx, dz) * 180 / Math.PI;
+    pitch = Math.asin(Math.max(-1, Math.min(1, dy / distance))) * 180 / Math.PI;
     updateCamera();
 };
 
@@ -805,17 +815,15 @@ splatAsset.on('load', () => {
     const aabb = resource?.aabb;
     splatBounds = aabb;
 
-    app.root.addChild(splat);
-    if (aabb) splat.getWorldTransform().transformPoint(aabb.center, splatCenter);
+    // Rz(180°) sends local (x,y,z) to (-x,-y,z).
+    // The pivot is created at that exact transformed AABB center, before
+    // parenting the splat, so its local origin cannot offset the rotation.
+    if (aabb) splatCenter.set(-aabb.center.x, -aabb.center.y, aabb.center.z);
     else splatCenter.set(0, 0, 0);
-
-    // Put the Gaussian under a pivot at its actual center. Rotating this parent
-    // keeps the motorcycle center fixed in world space, so it can only spin on
-    // its own vertical axis and can never trace a circle around another pivot.
     const pivot = new Entity('SplatPivot');
     pivot.setPosition(splatCenter);
     app.root.addChild(pivot);
-    splat.reparent(pivot);
+    pivot.addChild(splat);
     splat.setLocalPosition(-splatCenter.x, -splatCenter.y, -splatCenter.z);
     splatPivot = pivot;
     modelYaw = 0;

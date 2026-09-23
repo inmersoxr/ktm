@@ -16,7 +16,6 @@ import {
     XRSPACE_LOCAL,
     XRSPACE_VIEWER,
     XRTRACKABLE_PLANE,
-    XRTRACKABLE_POINT,
     XRTARGETRAY_SCREEN,
     XRTYPE_AR,
     XrManager,
@@ -26,6 +25,7 @@ import type { BoundingBox, Quat, Vec3 } from 'playcanvas';
 
 import { SPLAT_URL } from './splat-config';
 import { createArDiagnostics } from './ar-diagnostics';
+import { acceptFloorSample, createFloorTracker, FLOOR_HIT_TIMEOUT_MS, resetFloorTracker } from './ar-floor';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#ar-canvas');
 const startButton = document.querySelector<HTMLButtonElement>('#ar-start');
@@ -207,6 +207,8 @@ let placed = false;
 let latestPosition: Vec3 | null = null;
 let latestRotation: Quat | null = null;
 let latestHitResult: any = null;
+const floorTracker = createFloorTracker();
+let lastValidHitAt = 0;
 let activeAnchor: any = null;
 let activeHitTestSource: any = null;
 let userScale = 1;
@@ -294,19 +296,27 @@ splatAsset.on('error', (error: unknown) => {
 app.assets.add(splatAsset);
 app.assets.load(splatAsset);
 
-const applyPlacementPose = (position: Vec3, rotation: Quat | null) => {
+const applyPlacementPose = (position: Vec3) => {
     modelRoot.setPosition(position);
-    if (rotation) {
-        modelRoot.setRotation(rotation);
-    }
+    // A motorcycle stays upright even when ARCore's floor pose is noisy.
+    modelRoot.setEulerAngles(0, 0, 0);
+};
+
+const discardFloorHit = () => {
+    resetFloorTracker(floorTracker);
+    latestPosition = null;
+    latestRotation = null;
+    latestHitResult = null;
+    lastValidHitAt = 0;
+    reticle.enabled = false;
 };
 
 const placeAtLatestHit = () => {
-    if (placed || !latestPosition || !splatEntity || !latestHitResult) return;
+    if (placed || !reticle.enabled || performance.now() - lastValidHitAt > FLOOR_HIT_TIMEOUT_MS ||
+        !latestPosition || !splatEntity || !latestHitResult) return;
 
     // Freeze the exact hit pose represented by the visible reticle.
     const position = latestPosition.clone();
-    const rotation = latestRotation?.clone() ?? null;
     const hitResult = latestHitResult;
 
     placed = true;
@@ -317,7 +327,7 @@ const placeAtLatestHit = () => {
     activeHitTestSource?.remove();
     activeHitTestSource = null;
 
-    applyPlacementPose(position, rotation);
+    applyPlacementPose(position);
     modelRoot.enabled = true;
     setStatus('KTM colocada. Pellizca con dos dedos para ajustar el tamaño.');
 
@@ -341,7 +351,7 @@ const placeAtLatestHit = () => {
         const syncToAnchor = () => {
             if (activeAnchor !== anchor) return;
             modelRoot.setPosition(anchor.getPosition());
-            modelRoot.setRotation(anchor.getRotation());
+            modelRoot.setEulerAngles(0, 0, 0);
         };
 
         // The callback is issued after the first valid anchor pose exists.
@@ -364,10 +374,7 @@ app.xr?.on('start', () => {
     backButton.hidden = false;
     arUi.style.pointerEvents = 'auto';
     arUi.style.touchAction = 'none';
-    reticle.enabled = false;
-    latestPosition = null;
-    latestRotation = null;
-    latestHitResult = null;
+    discardFloorHit();
     placed = false;
     userScale = 1;
     pinchStartDistance = null;
@@ -385,10 +392,10 @@ app.xr?.hitTest.on('available', () => {
     if (placed || activeHitTestSource || !app.xr?.hitTest.supported) return;
 
     // Match the official PlayCanvas mobile AR hit-test flow: a viewer-space
-    // ray continuously drives a placement reticle over detected planes/points.
+    // ray drives a placement reticle only over recognized planes.
     app.xr.hitTest.start({
         spaceType: XRSPACE_VIEWER,
-        entityTypes: [XRTRACKABLE_PLANE, XRTRACKABLE_POINT],
+        entityTypes: [XRTRACKABLE_PLANE],
         callback: (error, source) => {
             if (error || !source) {
                 console.error(error);
@@ -400,21 +407,30 @@ app.xr?.hitTest.on('available', () => {
 
             source.on('result', (position, rotation, _inputSource, hitTestResult) => {
                 if (placed) return;
-
+                // Reject walls, ceilings, drifting poses and feature points.
+                const now = performance.now();
+                if (!hitTestResult || !acceptFloorSample(floorTracker, position, rotation, now)) {
+                    latestPosition = null;
+                    latestRotation = null;
+                    latestHitResult = null;
+                    reticle.enabled = false;
+                    return;
+                }
                 latestPosition = position.clone();
                 latestRotation = rotation.clone();
-                latestHitResult = hitTestResult ?? null;
-
-                // The reticle and the eventual model placement use the exact
-                // same world-space transform.
+                latestHitResult = hitTestResult;
+                lastValidHitAt = now;
                 reticle.setPosition(position);
                 reticle.setRotation(rotation);
                 reticle.enabled = true;
-                setStatus('Superficie detectada. Toca el aro para colocar la KTM.');
+                setStatus('Suelo detectado. Toca el aro para colocar la KTM.');
             });
 
             source.once('remove', () => {
-                if (activeHitTestSource === source) activeHitTestSource = null;
+                if (activeHitTestSource === source) {
+                    activeHitTestSource = null;
+                    if (!placed) discardFloorHit();
+                }
             });
         }
     });
@@ -432,10 +448,7 @@ app.xr?.on('end', () => {
     userScale = 1;
     pinchStartDistance = null;
     placed = false;
-    latestPosition = null;
-    latestRotation = null;
-    latestHitResult = null;
-    reticle.enabled = false;
+    discardFloorHit();
 
     // XR session end already owns disposal of native hit-test and anchor
     // resources. Calling remove()/destroy() here can race Android's teardown.
@@ -452,6 +465,14 @@ app.xr?.on('end', () => {
     backButton.disabled = false;
     setStatus('Sesión RA finalizada.');
     diagnostics.ended();
+});
+
+// When hit-test events stop, remove the old ring so it cannot float.
+app.on('update', () => {
+    if (!placed && reticle.enabled && performance.now() - lastValidHitAt > FLOOR_HIT_TIMEOUT_MS) {
+        discardFloorHit();
+        setStatus('Busca un suelo horizontal para colocar la KTM.');
+    }
 });
 
 // Passive capability check does not request a session or camera permission.

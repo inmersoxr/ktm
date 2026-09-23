@@ -12,7 +12,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: ktm-vite-verified
+  group: ktm-ui-release-20260922
   cancel-in-progress: true
 
 jobs:

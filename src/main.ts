@@ -48,7 +48,9 @@ if (!canvas) {
     throw new Error('Missing #app canvas');
 }
 
-const isDesktopViewer = window.matchMedia('(min-width: 720px) and (pointer: fine)').matches;
+const desktopLayout = window.matchMedia('(min-width: 980px) and (min-aspect-ratio: 4/3), (min-width: 900px) and (pointer: fine)');
+let isDesktopViewer = desktopLayout.matches;
+canvas.dataset.viewerLayout = isDesktopViewer ? 'desktop' : 'mobile';
 const DEFAULT_FOV = isDesktopViewer ? DESKTOP_CAMERA_FOV : 75;
 const DEFAULT_CAMERA_DIRECTION = new Vec3(2, 1, 2).normalize();
 const DEFAULT_PITCH = (Math.asin(DEFAULT_CAMERA_DIRECTION.y) * 180) / Math.PI;
@@ -145,6 +147,8 @@ let pinchLastCenterY = 0;
 
 let splatPivot: Entity | null = null;
 let modelYaw = 0;
+let desktopModelZoom = 1;
+let pinchStartModelZoom = 1;
 let isControlKeyDown = false;
 let activeView = 0;
 let transition: { start: number; duration: number; from: CameraPose; to: CameraPose } | null = null;
@@ -254,6 +258,7 @@ const applyCameraPose = (pose: CameraPose) => {
     pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, (Math.asin(Math.max(-1, Math.min(1, dy / poseDistance))) * 180) / Math.PI));
     distance = poseDistance;
     fov = pose.fov;
+    canvas.dataset.cameraFov = String(fov);
 
     if (camera.camera) {
         camera.camera.fov = fov;
@@ -462,6 +467,7 @@ editorPanel.querySelector<HTMLButtonElement>('#camera-copy-views')?.addEventList
 updateEditorLabel();
 
 const xrButton = document.querySelector<HTMLButtonElement>('#xr-button');
+if (xrButton) xrButton.hidden = isDesktopViewer;
 const setArTransform = () => {
     if (!splatEntity || !splatBounds) return;
     const size = splatBounds.halfExtents.clone().mulScalar(2);
@@ -565,6 +571,13 @@ const resetMotorcycleRotation = () => {
     modelYaw = 0;
     splatPivot?.setLocalEulerAngles(0, 0, 0);
 };
+const setDesktopModelZoom = (value: number) => {
+    if (!isDesktopViewer || !splatPivot) return;
+    desktopModelZoom = Math.max(.8, Math.min(1.48, value));
+    const scale = DESKTOP_MODEL_SCALE * desktopModelZoom;
+    splatPivot.setLocalScale(scale, scale, scale);
+    canvas.dataset.modelScale = String(scale);
+};
 
 const getTouchPinchDistance = () => {
     const points = Array.from(touchPointers.values());
@@ -591,6 +604,7 @@ canvas.addEventListener('pointerdown', (event) => {
             activePointerId = null;
             pinchStartDistance = getTouchPinchDistance();
             pinchStartCameraDistance = distance;
+            pinchStartModelZoom = desktopModelZoom;
             const points = Array.from(touchPointers.values());
             pinchLastCenterX = (points[0].x + points[1].x) * 0.5;
             pinchLastCenterY = (points[0].y + points[1].y) * 0.5;
@@ -624,8 +638,12 @@ canvas.addEventListener('pointermove', (event) => {
             const currentPinchDistance = getTouchPinchDistance();
 
             if (pinchStartDistance > 0 && currentPinchDistance > 0) {
-                distance = clampDistance(pinchStartCameraDistance * (pinchStartDistance / currentPinchDistance));
-                updateCamera();
+                if (isDesktopViewer && splatPivot) {
+                    setDesktopModelZoom(pinchStartModelZoom * currentPinchDistance / pinchStartDistance);
+                } else {
+                    distance = clampDistance(pinchStartCameraDistance * (pinchStartDistance / currentPinchDistance));
+                    updateCamera();
+                }
             }
 
             const panX = currentCenterX - pinchLastCenterX;
@@ -650,8 +668,12 @@ canvas.addEventListener('pointermove', (event) => {
     if (dragMode === 'pan') {
         panTarget(deltaX, deltaY);
     } else if (dragMode === 'dolly') {
-        distance = clampDistance(distance * (1 + deltaY * 0.012));
-        updateCamera();
+        if (isDesktopViewer && splatPivot) {
+            setDesktopModelZoom(desktopModelZoom * Math.exp(-deltaY * .008));
+        } else {
+            distance = clampDistance(distance * (1 + deltaY * .012));
+            updateCamera();
+        }
     } else {
         rotateMotorcycle(deltaX);
         orbitAboveMotorcycle(deltaY);
@@ -709,9 +731,13 @@ canvas.addEventListener(
             return;
         }
 
-        const zoomSpeed = event.ctrlKey ? PINCH_ZOOM_SPEED : WHEEL_ZOOM_SPEED;
-        distance = clampDistance(distance * (1 + event.deltaY * zoomSpeed));
-        updateCamera();
+        if (isDesktopViewer && splatPivot) {
+            setDesktopModelZoom(desktopModelZoom * Math.exp(-event.deltaY * .0014));
+        } else {
+            const zoomSpeed = event.ctrlKey ? PINCH_ZOOM_SPEED : WHEEL_ZOOM_SPEED;
+            distance = clampDistance(distance * (1 + event.deltaY * zoomSpeed));
+            updateCamera();
+        }
     },
     { passive: false }
 );
@@ -747,7 +773,23 @@ window.addEventListener('blur', () => {
     isControlKeyDown = false;
 });
 
-const resize = () => app.resizeCanvas();
+const resize = () => {
+    app.resizeCanvas();
+    const nextLayout = desktopLayout.matches;
+    if (nextLayout === isDesktopViewer) return;
+    isDesktopViewer = nextLayout;
+    canvas.dataset.viewerLayout = isDesktopViewer ? 'desktop' : 'mobile';
+    desktopModelZoom = 1;
+    if (splatPivot) {
+        const scale = isDesktopViewer ? DESKTOP_MODEL_SCALE : 1;
+        splatPivot.setLocalScale(scale, scale, scale);
+        canvas.dataset.modelScale = String(scale);
+        if (splatBounds) sceneRadius = Math.max(splatBounds.halfExtents.length() * scale, MIN_SCENE_RADIUS);
+        transition = null;
+        applyCameraPose(viewPose(views[activeView] ?? CAMERA_POSE!, activeView));
+    }
+    if (xrButton) xrButton.hidden = isDesktopViewer;
+};
 window.addEventListener('resize', resize);
 app.on('destroy', () => {
     window.removeEventListener('resize', resize);
@@ -850,6 +892,8 @@ splatAsset.on('load', () => {
     // A mobile/touch viewer remains 1:1, and the RA page owns a separate model.
     if (isDesktopViewer) pivot.setLocalScale(DESKTOP_MODEL_SCALE, DESKTOP_MODEL_SCALE, DESKTOP_MODEL_SCALE);
     splatPivot = pivot;
+    canvas.dataset.viewerLayout = isDesktopViewer ? 'desktop' : 'mobile';
+    canvas.dataset.modelScale = String(isDesktopViewer ? DESKTOP_MODEL_SCALE : 1);
     modelYaw = 0;
 
     // scene radius scales zoom/pan limits even when the authored pose wins

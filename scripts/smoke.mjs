@@ -48,7 +48,7 @@ try {
     await page.waitForSelector('#view-nav .view-button', { timeout: 20000 });
     let model = false;
     try { await page.waitForFunction(() => document.querySelector('#loader')?.dataset.hidden === 'true', { timeout: 45000 }); model = true; } catch {}
-    const hintShown = model && await page.locator('#gesture-hint').evaluate((element) => element.classList.contains('is-visible'));
+    const hintHidden = model && await page.locator('#gesture-hint').evaluate((element) => getComputedStyle(element).display === 'none');
     let verticalOrbitChangedImage = false;
     let hintDismissedByGesture = false;
     if (model) {
@@ -74,6 +74,15 @@ try {
       verticalOrbitChangedImage = !before.equals(after);
       hintDismissedByGesture = !(await page.locator('#gesture-hint').evaluate((element) => element.classList.contains('is-visible')));
     }
+    const beforeZoom = await page.locator('#app').evaluate((el) => ({
+      layout:el.dataset.viewerLayout, fov:Number(el.dataset.cameraFov), scale:Number(el.dataset.modelScale)
+    }));
+    await page.mouse.move(750,460);
+    await page.mouse.wheel(0,-140);
+    await page.waitForTimeout(250);
+    const afterZoom = await page.locator('#app').evaluate((el) => ({
+      fov:Number(el.dataset.cameraFov), scale:Number(el.dataset.modelScale)
+    }));
     const desktopNavigation = await page.locator('#view-nav').evaluate((nav) => {
       const rect=nav.getBoundingClientRect();
       const label=nav.querySelector('.view-button small');
@@ -93,8 +102,10 @@ try {
       status: response?.status(),
       nav: await page.locator('.view-button').count(),
       desktopNavigation,
+      beforeZoom,
+      afterZoom,
       model,
-      hintShown,
+      hintHidden,
       hintDismissedByGesture,
       verticalOrbitChangedImage,
       loader: await page.locator('#loader-message').textContent(),
@@ -103,7 +114,9 @@ try {
     };
     await page.screenshot({ path: screenshots + '/viewer.png', timeout: 10000 }).catch(() => {});
     await page.close();
-    if (!model || !hintShown || !hintDismissedByGesture || !verticalOrbitChangedImage || !result.desktopNavigation.visible || !result.desktopNavigation.fits || !result.desktopNavigation.desktopArHidden || result.desktopNavigation.numberBadges !== 0 || result.desktopNavigation.labels.length !== 8 || result.desktopNavigation.bottom < result.desktopNavigation.viewportHeight - 75 || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Viewer/nav/gesture failure: ' + JSON.stringify(result));
+    if (!model || !hintHidden || !hintDismissedByGesture || !verticalOrbitChangedImage || result.beforeZoom.layout !== 'desktop' || result.beforeZoom.fov !== 13 || result.beforeZoom.scale !== 4 ||
+      result.afterZoom.fov !== 13 || result.afterZoom.scale <= 4 ||
+      !result.desktopNavigation.visible || !result.desktopNavigation.fits || !result.desktopNavigation.desktopArHidden || result.desktopNavigation.numberBadges !== 0 || result.desktopNavigation.labels.length !== 8 || result.desktopNavigation.bottom < result.desktopNavigation.viewportHeight - 75 || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Viewer/nav/gesture failure: ' + JSON.stringify(result));
     return result;
   });
 
@@ -137,37 +150,66 @@ try {
     return result;
   });
 
-  await trial('mobile landscape stays mobile', async () => {
+  await trial('phone using desktop-site layout', async () => {
     const context=await browser.newContext({
-      viewport:{width:1536,height:700},
-      isMobile:true,
-      hasTouch:true,
+      viewport:{width:1536,height:700},isMobile:true,hasTouch:true,
       userAgent:'Mozilla/5.0 (Linux; Android 15; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36'
     });
     const page=await context.newPage();
-    const getErrors=attach(page,'mobile landscape');
+    const getErrors=attach(page,'phone desktop layout');
     await page.goto(base,{waitUntil:'domcontentloaded',timeout:30000});
     await page.waitForFunction(()=>document.querySelector('#loader')?.dataset.hidden==='true',{timeout:50000});
-    const result=await page.evaluate(()=>({
-      arVisible:getComputedStyle(document.querySelector('#xr-button')).display!=='none',
-      touch:matchMedia('(pointer:coarse)').matches,
-      desktop:matchMedia('(pointer:fine)').matches,
-      title:document.querySelector('#view-title')?.textContent,
-      labels:[...document.querySelectorAll('#view-nav .view-button')].map(n=>n.textContent?.trim()),
-      noDesktopGrid:getComputedStyle(document.querySelector('#view-nav')).display!=='grid'
-    }));
-    await page.waitForTimeout(550);
-    const mobileScreenshot=await page.screenshot({path:screenshots+'/viewer-mobile-landscape.png'}).catch(()=>null);
-    result.screenshotBytes=mobileScreenshot?.length ?? 0;
+    const result=await page.evaluate(()=>{
+      const canvas=document.querySelector('#app'),nav=document.querySelector('#view-nav');
+      const r=nav.getBoundingClientRect();
+      return {
+        layout:canvas.dataset.viewerLayout,fov:Number(canvas.dataset.cameraFov),
+        scale:Number(canvas.dataset.modelScale),
+        arHidden:getComputedStyle(document.querySelector('#xr-button')).display==='none',
+        grid:getComputedStyle(nav).display==='grid',
+        eightFit:nav.querySelectorAll('.view-button').length===8 &&
+          [...nav.querySelectorAll('.view-button')].every(b=>
+            b.getBoundingClientRect().left>=r.left-1&&b.getBoundingClientRect().right<=r.right+1),
+        helpHidden:getComputedStyle(document.querySelector('#gesture-hint')).display==='none',
+        logoBottom:document.querySelector('.brand').getBoundingClientRect().bottom,
+        textTop:document.querySelector('#view-copy').getBoundingClientRect().top,
+        touch:matchMedia('(pointer:coarse)').matches
+      };
+    });
+    await page.screenshot({path:screenshots+'/viewer-phone-desktop.png'});
     result.errors=getErrors();
     await context.close();
-    if(!result.arVisible||!result.touch||result.desktop||result.title!=='KTM 390 DUKE'||
-       result.labels.length!==8||!result.noDesktopGrid||result.errors.some(e=>e.startsWith('PAGE:'))){
-      throw Error('Mobile landscape regression: '+JSON.stringify(result));
+    if(result.layout!=='desktop'||result.fov!==13||result.scale!==4||!result.arHidden||
+       !result.grid||!result.eightFit||!result.helpHidden||result.textTop<result.logoBottom+10||
+       !result.touch||result.errors.some(e=>e.startsWith('PAGE:'))){
+      throw Error('Desktop layout on phone failed: '+JSON.stringify(result));
     }
     return result;
   });
-
+  await trial('normal mobile landscape retains mobile behavior', async () => {
+    const context=await browser.newContext({
+      viewport:{width:850,height:390},isMobile:true,hasTouch:true,
+      userAgent:'Mozilla/5.0 (Linux; Android 15; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36'
+    });
+    const page=await context.newPage();
+    const getErrors=attach(page,'normal mobile landscape');
+    await page.goto(base,{waitUntil:'domcontentloaded',timeout:30000});
+    await page.waitForFunction(()=>document.querySelector('#loader')?.dataset.hidden==='true',{timeout:50000});
+    const result=await page.evaluate(()=>{
+      const canvas=document.querySelector('#app');
+      return {layout:canvas.dataset.viewerLayout,scale:Number(canvas.dataset.modelScale),
+        fov:Number(canvas.dataset.cameraFov),
+        arVisible:getComputedStyle(document.querySelector('#xr-button')).display!=='none'};
+    });
+    await page.screenshot({path:screenshots+'/viewer-phone-landscape.png'}).catch(()=>{});
+    result.errors=getErrors();
+    await context.close();
+    if(result.layout!=='mobile'||result.scale!==1||result.fov!==75||!result.arVisible||
+       result.errors.some(e=>e.startsWith('PAGE:'))){
+      throw Error('Normal mobile landscape changed: '+JSON.stringify(result));
+    }
+    return result;
+  });
   await trial('AR desktop diagnosis', async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 780 } });
     const getErrors = attach(page, 'AR desktop');

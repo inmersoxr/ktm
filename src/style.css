@@ -351,7 +351,7 @@ kbd {
 }
 
 /* Product showroom: keep navigation prominent, not the editor's key legend. */
-@media (min-width: 720px) and (pointer: fine) {
+@media (min-width: 980px) and (min-aspect-ratio: 4/3), (min-width: 900px) and (pointer: fine) {
     #xr-button { display: none !important; }
     #controls { display: none !important; }
     #view-nav {
@@ -384,10 +384,28 @@ kbd {
         width: min(350px, 32vw);
     }
     #view-copy h1 { font-size: clamp(34px, 3.5vw, 52px); }
-    #gesture-hint { bottom: 105px; }
+    #gesture-hint { display: none !important; }
+    #view-copy { top: max(112px, 16vh); }
+    #view-kicker { margin-top: 0; }
+    .header-actions { display: none; }
+}
+@media (min-width: 980px) and (min-aspect-ratio: 4/3) and (max-height: 640px) {
+    #product-header { padding: 16px 24px; }
+    #view-copy { top: 92px; left: clamp(24px, 4vw, 65px); width: min(320px, 28vw); }
+    #view-copy h1 { font-size: clamp(28px, 3vw, 39px); line-height: 1.05; }
+    #view-copy p { font-size: 12px; line-height: 1.4; }
+    #view-nav { bottom: 12px; }
+    .view-button { padding: 8px 4px; }
+}
+@media (pointer: coarse) and (max-width: 979px) and (orientation: landscape) {
+    #product-header { padding: 12px 20px; }
+    #view-copy { top: 82px; left: 20px; width: min(280px, 40vw); }
+    #view-copy h1 { font-size: clamp(24px, 4vw, 34px); }
+    #view-copy p { font-size: 11px; line-height: 1.4; }
+    #gesture-hint { bottom: 72px; }
 }
 /* A landscape phone still uses touch navigation, regardless of its width. */
-@media (pointer: coarse) {
+@media (pointer: coarse) and (max-width: 979px) {
     #view-nav {
         display: flex;
         grid-template-columns: none;

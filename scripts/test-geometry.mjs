@@ -99,3 +99,8 @@ assert.doesNotMatch(productSource,/Vista de producto en tres cuartos|proporcione
 const viewerSource=readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
 assert.match(viewerSource,/pivot.setLocalScale\(DESKTOP_MODEL_SCALE/);
 console.log('PASS: desktop physical scale, telephoto camera, separate mobile presets and commercial copy.');
+
+const activeLayoutSource=readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
+assert.match(activeLayoutSource,/desktopLayout\.matches/);
+assert.match(activeLayoutSource,/setDesktopModelZoom/);
+console.log('PASS: screen-layout detection and model-scale zoom are enabled.');

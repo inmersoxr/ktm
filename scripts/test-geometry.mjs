@@ -62,3 +62,15 @@ assert.doesNotMatch(arSrc,/XRTRACKABLE_POINT/);
 assert.match(arSrc,/FLOOR_HIT_TIMEOUT_MS/);
 assert.match(arSrc,/acceptFloorSample\(/);
 console.log('PASS: model-centered orbit, 0–85° clamp, wall/ceiling rejection, hit stability and stale-hit protection.');
+
+const eye={x:0,y:1.4,z:0};
+assert.equal(floor.isCurrentFloorRay({x:0,y:.55,z:-1.6},eye,{x:0,y:-0.4,z:-0.9}),true);
+assert.equal(floor.isCurrentFloorRay({x:0,y:1.0,z:-1.6},eye,{x:0,y:0,z:-1}),false);
+assert.equal(floor.isCurrentFloorRay({x:0,y:.55,z:-6},eye,{x:0,y:-0.4,z:-0.9}),false);
+assert.ok(floor.FLOOR_HIT_TIMEOUT_MS <= 100);
+const mainSource=readFileSync(new URL('../src/main.ts',import.meta.url),'utf8');
+assert.match(mainSource,/orbitAboveCenter\(cameraPosition, target, splatCenter, deltaY \* ORBIT_SENSITIVITY\)/);
+const userGuide=readFileSync(new URL('../src/ar-diagnostics.ts',import.meta.url),'utf8');
+assert.doesNotMatch(userGuide,/Reintenta sin anclajes|Probar una configuración más sencilla/);
+assert.match(arSrc,/anchors: false/);
+console.log('PASS: live floor ray, fast expiry, inverted gesture and no advanced AR setup.');

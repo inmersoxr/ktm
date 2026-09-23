@@ -311,7 +311,6 @@ const discardFloorHit = () => {
     latestRotation = null;
     latestHitResult = null;
     lastValidHitAt = 0;
-    lastHitEventAt = 0;
     reticle.enabled = false;
 };
 
@@ -419,11 +418,18 @@ app.xr?.hitTest.on('available', () => {
                 lastHitEventAt = now;
                 const cameraPosition = camera.getPosition();
                 const forward = camera.forward;
-                const valid = !!hitTestResult &&
-                    isCurrentFloorRay(position, cameraPosition, forward) &&
-                    acceptFloorSample(floorTracker, position, rotation, now);
-                if (!valid) {
+                if (!hitTestResult || !isCurrentFloorRay(position, cameraPosition, forward)) {
                     discardFloorHit();
+                    return;
+                }
+                // New horizontal hits need several coherent frames. A first
+                // good hit must not clear confidence accumulated previously.
+                if (!acceptFloorSample(floorTracker, position, rotation, now)) {
+                    latestPosition = null;
+                    latestRotation = null;
+                    latestHitResult = null;
+                    lastValidHitAt = 0;
+                    reticle.enabled = false;
                     return;
                 }
                 latestPosition = position.clone();

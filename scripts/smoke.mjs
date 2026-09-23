@@ -136,17 +136,18 @@ try {
     const getErrors = attach(page, 'AR Samsung');
     const response = await page.goto(new URL('ar.html', base).href, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForSelector('#ar-guide:not([hidden])', { timeout: 25000 });
-    await page.locator('#ar-guide-settings').click({ timeout: 10000 });
     const result = {
       status: response?.status(),
       heading: await page.locator('#ar-guide-heading').innerText(),
-      chromeInstructionsVisible: await page.locator('#ar-chrome-steps').isVisible(),
+      compactRecovery: await page.locator('#ar-guide').evaluate((el) => el.classList.contains('compact')),
+      technicalStepsHidden: await page.locator('#ar-guide-steps').isHidden(),
+      duplicateStatusHidden: await page.locator('#ar-status').isHidden(),
       brandVisible: await page.locator('#ar-brand').isVisible(),
       errors: getErrors()
     };
     await page.screenshot({ path: screenshots + '/samsung-guide.png' }).catch(() => {});
     await context.close();
-    if (!result.chromeInstructionsVisible || !result.brandVisible || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Samsung diagnostics failed: ' + JSON.stringify(result));
+    if (!result.compactRecovery || !result.technicalStepsHidden || !result.duplicateStatusHidden || !result.brandVisible || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Samsung diagnostics failed: ' + JSON.stringify(result));
     return result;
   });
 } finally {

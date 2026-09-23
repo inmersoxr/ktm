@@ -5,6 +5,7 @@ import {
     CameraComponentSystem,
     Color,
     DEVICETYPE_WEBGPU,
+    DEVICETYPE_WEBGL2,
     Entity,
     FILLMODE_FILL_WINDOW,
     GSplatComponentSystem,
@@ -69,12 +70,13 @@ const hideLoader = () => {
 };
 
 const device = await createGraphicsDevice(canvas, {
-    deviceTypes: [DEVICETYPE_WEBGPU],
+    deviceTypes: [DEVICETYPE_WEBGL2, DEVICETYPE_WEBGPU],
 
     // Gaussian splats do not benefit from antialiasing and it is expensive.
     antialias: false
 });
 device.maxPixelRatio = Math.min(window.devicePixelRatio, 2);
+console.info('[KTM viewer] graphics device:', device.deviceType);
 
 const createOptions = new AppOptions();
 createOptions.graphicsDevice = device;

@@ -59,3 +59,20 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Verify live site, AR page and model assets
+        env:
+          SITE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -e
+          for path in "" "ar.html" "splat/meta.json" "splat/means_l.webp"; do
+            ok=0
+            for attempt in $(seq 1 12); do
+              if curl -fsSL --max-time 20 -o /dev/null "${SITE_URL}${path}"; then
+                echo "OK ${SITE_URL}${path}"
+                ok=1
+                break
+              fi
+              sleep 5
+            done
+            if [ "$ok" != 1 ]; then echo "FAILED ${SITE_URL}${path}"; exit 1; fi
+          done

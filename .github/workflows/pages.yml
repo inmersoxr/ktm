@@ -72,7 +72,7 @@ jobs:
               echo "No legacy Pages deployment detected."
               break
             fi
-            unfinished=$(printf '%s\n' "$statuses" | grep -v '^completed || true)
+            unfinished=$(printf '%s\n' "$statuses" | grep -v '^completed$' || true)
             if [ -z "$unfinished" ]; then
               echo "Legacy Pages publication finished. Publishing validated Vite artifact last."
               break

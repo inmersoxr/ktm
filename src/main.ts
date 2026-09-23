@@ -27,6 +27,20 @@ const canvas = document.querySelector<HTMLCanvasElement>('#app');
 const loader = document.querySelector<HTMLDivElement>('#loader');
 const loaderMessage = document.querySelector<HTMLDivElement>('#loader-message');
 const loaderProgressBar = document.querySelector<HTMLDivElement>('#loader-progress-bar');
+const gestureHint = document.querySelector<HTMLElement>('#gesture-hint');
+let gestureHintTimeout: number | undefined;
+
+const dismissGestureHint = () => {
+    if (gestureHintTimeout !== undefined) window.clearTimeout(gestureHintTimeout);
+    gestureHintTimeout = undefined;
+    gestureHint?.classList.remove('is-visible');
+};
+
+const showGestureHint = () => {
+    if (!gestureHint) return;
+    gestureHint.classList.add('is-visible');
+    gestureHintTimeout = window.setTimeout(dismissGestureHint, 5600);
+};
 
 if (!canvas) {
     throw new Error('Missing #app canvas');
@@ -44,7 +58,7 @@ const FLY_MOVE_DECELERATION_DAMPING = 0.993;
 const WHEEL_ZOOM_SPEED = 0.06 / 60;
 const PINCH_ZOOM_SPEED = WHEEL_ZOOM_SPEED * 2;
 const MIN_PITCH = 0;
-const MAX_PITCH = 90;
+const MAX_PITCH = 85;
 const MIN_SCENE_RADIUS = 0.5;
 
 type DragMode = 'orbit' | 'pan' | 'dolly';
@@ -218,7 +232,7 @@ const applyCameraPose = (pose: CameraPose) => {
 
     target.set(pose.target[0], pose.target[1], pose.target[2]);
     yaw = (Math.atan2(dx, dz) * 180) / Math.PI;
-    pitch = Math.max(MIN_PITCH, (Math.asin(Math.max(-1, Math.min(1, dy / poseDistance))) * 180) / Math.PI);
+    pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, (Math.asin(Math.max(-1, Math.min(1, dy / poseDistance))) * 180) / Math.PI));
     distance = poseDistance;
     fov = pose.fov;
 
@@ -238,7 +252,7 @@ const focusMotorcycle = (frame = false) => {
     target.copy(splatCenter);
     distance = frame ? clampDistance(getFrameDistance(sceneRadius)) : clampDistance(Math.sqrt(dx * dx + dy * dy + dz * dz));
     yaw = (Math.atan2(dx, dz) * 180) / Math.PI;
-    pitch = (Math.asin(Math.max(-1, Math.min(1, dy / Math.max(distance, 1e-6)))) * 180) / Math.PI;
+    pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, (Math.asin(Math.max(-1, Math.min(1, dy / Math.max(distance, 1e-6)))) * 180) / Math.PI));
     updateCamera();
 };
 
@@ -504,8 +518,16 @@ const panTarget = (deltaX: number, deltaY: number) => {
 // target: the motorcycle spins around a pivot located at its own physical center.
 const rotateMotorcycle = (deltaX: number) => {
     if (!splatPivot) return;
-    modelYaw -= deltaX * ORBIT_SENSITIVITY;
+    // The model follows the horizontal swipe instead of spinning against it.
+    modelYaw += deltaX * ORBIT_SENSITIVITY;
     splatPivot.setLocalEulerAngles(0, modelYaw, 0);
+};
+
+const orbitAboveMotorcycle = (deltaY: number) => {
+    if (deltaY === 0) return;
+    // Drag up to look down on the motorcycle; never orbit underneath it.
+    pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, pitch - deltaY * ORBIT_SENSITIVITY));
+    updateCamera();
 };
 
 const resetMotorcycleRotation = () => {
@@ -521,6 +543,7 @@ const getTouchPinchDistance = () => {
 
 canvas.addEventListener('pointerdown', (event) => {
     transition = null;
+    dismissGestureHint();
 
     if (event.pointerType === 'touch') {
         touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -600,6 +623,7 @@ canvas.addEventListener('pointermove', (event) => {
         updateCamera();
     } else {
         rotateMotorcycle(deltaX);
+        orbitAboveMotorcycle(deltaY);
     }
 });
 
@@ -806,6 +830,7 @@ splatAsset.on('load', () => {
         frameSplat(splat, aabb);
     }
     hideLoader();
+    showGestureHint();
 });
 
 splatAsset.on('progress', (received: number, length: number) => {

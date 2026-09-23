@@ -48,17 +48,34 @@ try {
     await page.waitForSelector('#view-nav .view-button', { timeout: 20000 });
     let model = false;
     try { await page.waitForFunction(() => document.querySelector('#loader')?.dataset.hidden === 'true', { timeout: 45000 }); model = true; } catch {}
+    const hintShown = model && await page.locator('#gesture-hint').evaluate((element) => element.classList.contains('is-visible'));
+    let verticalOrbitChangedImage = false;
+    let hintDismissedByGesture = false;
+    if (model) {
+      const before = await page.locator('#app').screenshot();
+      await page.mouse.move(640, 420);
+      await page.mouse.down();
+      await page.mouse.move(640, 245, { steps: 16 });
+      await page.mouse.up();
+      await page.waitForTimeout(250);
+      const after = await page.locator('#app').screenshot();
+      verticalOrbitChangedImage = !before.equals(after);
+      hintDismissedByGesture = !(await page.locator('#gesture-hint').evaluate((element) => element.classList.contains('is-visible')));
+    }
     const result = {
       status: response?.status(),
       nav: await page.locator('.view-button').count(),
       model,
+      hintShown,
+      hintDismissedByGesture,
+      verticalOrbitChangedImage,
       loader: await page.locator('#loader-message').textContent(),
       graphics: await page.evaluate(() => ({ webgpu: !!navigator.gpu, webgl2: !!document.createElement('canvas').getContext('webgl2') })),
       errors: getErrors()
     };
     await page.screenshot({ path: screenshots + '/viewer.png', timeout: 10000 }).catch(() => {});
     await page.close();
-    if (!model || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Viewer runtime failure: ' + JSON.stringify(result));
+    if (!model || !hintShown || !hintDismissedByGesture || !verticalOrbitChangedImage || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Viewer or gesture failure: ' + JSON.stringify(result));
     return result;
   });
 
@@ -95,6 +112,8 @@ try {
     await page.waitForSelector('#ar-guide:not([hidden])', { timeout: 25000 });
     const result = {
       status: response?.status(),
+      brand: await page.locator('#ar-brand').innerText(),
+      modeLabel: await page.locator('#ar-mode-label').innerText(),
       heading: await page.locator('#ar-guide-heading').innerText(),
       message: await page.locator('#ar-guide-message').innerText(),
       action: await page.locator('#ar-start').innerText(),
@@ -102,7 +121,7 @@ try {
     };
     await page.screenshot({ path: screenshots + '/ar-desktop.png' }).catch(() => {});
     await page.close();
-    if (result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('AR JS crash: ' + JSON.stringify(result));
+    if (!result.brand.includes('KTM') || result.modeLabel !== 'REALIDAD AUMENTADA' || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('AR branding or JS failure: ' + JSON.stringify(result));
     return result;
   });
 
@@ -122,11 +141,12 @@ try {
       status: response?.status(),
       heading: await page.locator('#ar-guide-heading').innerText(),
       chromeInstructionsVisible: await page.locator('#ar-chrome-steps').isVisible(),
+      brandVisible: await page.locator('#ar-brand').isVisible(),
       errors: getErrors()
     };
     await page.screenshot({ path: screenshots + '/samsung-guide.png' }).catch(() => {});
     await context.close();
-    if (!result.chromeInstructionsVisible || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Samsung diagnostics failed: ' + JSON.stringify(result));
+    if (!result.chromeInstructionsVisible || !result.brandVisible || result.errors.some((v) => v.startsWith('PAGE:'))) throw Error('Samsung diagnostics failed: ' + JSON.stringify(result));
     return result;
   });
 } finally {

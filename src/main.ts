@@ -20,6 +20,7 @@ import {
 import type { BoundingBox } from 'playcanvas';
 
 import './style.css';
+import { installVerticalDissolve } from './vertical-dissolve';
 import { DESKTOP_CAMERA_FOV, DESKTOP_MODEL_SCALE, prepareViewerPose } from './viewer-camera';
 import { orbitAboveCenter } from './orbit-geometry';
 import type { CameraPose, ProductView } from './splat-config';
@@ -878,6 +879,12 @@ splatAsset.on('load', () => {
     const resource = splatAsset.resource as { aabb?: BoundingBox } | null;
     const aabb = resource?.aabb;
     splatBounds = aabb;
+    // Play the bottom-up procedural dissolve after the Gaussian material is ready.
+    if (splat.gsplat?.material) {
+        installVerticalDissolve(app, splat, aabb);
+    } else {
+        splat.gsplat?.once('load', () => installVerticalDissolve(app, splat, aabb));
+    }
 
     // Rz(180°) sends local (x,y,z) to (-x,-y,z).
     // The pivot is created at that exact transformed AABB center, before

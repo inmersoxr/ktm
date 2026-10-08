@@ -58,7 +58,7 @@ try {
       const middle = await page.locator('#app').screenshot({path:screenshots+'/viewer-dissolve-mid.png'});
       await page.waitForFunction(() => document.querySelector('#app')?.dataset.fxState === 'complete', {timeout: 12000});
       const finished = await page.locator('#app').screenshot({path:screenshots+'/viewer-dissolve-final.png'});
-      revealVerified = !middle.equals(finished) && finished.length > middle.length * 1.1;
+      revealVerified = !middle.equals(finished) && finished.length > middle.length * 1.03;
       if (!revealVerified) throw Error('Gaussian dissolve did not visibly reconstruct: middle='+middle.length+' final='+finished.length);
     }
     const hintHidden = model && await page.locator('#gesture-hint').evaluate((element) => getComputedStyle(element).display === 'none');

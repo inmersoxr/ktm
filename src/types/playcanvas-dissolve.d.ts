@@ -4,6 +4,8 @@ declare module 'playcanvas/scripts/esm/gsplat/shader-effect-dissolve.mjs' {
 
     export class GsplatDissolveShaderEffect extends Script {
         effectTime: number;
+        material: import('playcanvas').Material | null;
+        update(dt: number): void;
         aabbMin: Vec3;
         aabbMax: Vec3;
         cropEnabled: boolean;

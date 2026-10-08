@@ -44,6 +44,9 @@
         #ar-mode-label { color:#ff8a4b; font-size:9px; font-weight:750; letter-spacing:.18em; text-shadow:0 1px 10px #000; }
         #ar-status { max-width:min(310px, 68vw); font-size:12px; padding:9px 11px; background:rgba(0,0,0,.52); }
         #ar-back { flex-shrink:0; font-size:12px; padding:10px 14px; }
+        #ar-actions { display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:7px; }
+        #ar-replay { background:rgba(255,255,255,.88); color:#111; font-size:12px; padding:10px 14px; }
+        #ar-replay[hidden] { display:none!important; }
         #ar-tip { align-self:center; max-width:330px; margin-top:auto; margin-bottom:12px; padding:10px 14px; border:1px solid rgba(255,255,255,.15); border-radius:12px; background:rgba(0,0,0,.58); color:#fff; text-align:center; font-size:12px; line-height:1.4; opacity:0; transform:translateY(8px); transition:opacity .35s ease, transform .35s ease; pointer-events:none; }
         #ar-tip[hidden] { display:none; }
         #ar-tip.shown { opacity:1; transform:translateY(0); }
@@ -60,7 +63,10 @@
                 <div id="ar-mode-label">REALIDAD AUMENTADA</div>
                 <div id="ar-status">Cargando motocicleta…</div>
             </div>
-            <button id="ar-back" type="button">Volver</button>
+            <div id="ar-actions">
+                <button id="ar-replay" type="button" hidden>Repetir</button>
+                <button id="ar-back" type="button">Volver</button>
+            </div>
         </div>
         <div id="ar-tip" hidden>Mueve el móvil para detectar una superficie. Toca el aro para colocar la moto.</div>
 

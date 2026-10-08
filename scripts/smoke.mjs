@@ -279,7 +279,14 @@ try {
     const getErrors = attach(page, 'AR dissolve');
     const url = new URL('ar.html?fxPreview=1', base);
     await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'playing', {timeout: 45000});
+    // A physically placed motorcycle must remain at its hidden first frame
+    // while GPU sort + first-use shader compilation warm up.
+    await page.waitForFunction(() => {
+      const c = document.querySelector('#ar-canvas');
+      return c?.dataset.fxState === 'armed' && c.dataset.fxProgress === '0';
+    }, {timeout: 45000});
+    const firstFrame = await page.locator('#ar-canvas').screenshot({path:screenshots+'/ar-dissolve-held.png'});
+    await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'playing', {timeout: 30000});
     await page.waitForFunction(() => {
       const c = document.querySelector('#ar-canvas');
       return Number(c?.dataset.fxProgress) > 0.32 && Number(c?.dataset.fxProgress) < 0.98;
@@ -287,12 +294,18 @@ try {
     const middle = await page.locator('#ar-canvas').screenshot({path:screenshots+'/ar-dissolve-mid.png'});
     await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'complete', {timeout: 18000});
     const finished = await page.locator('#ar-canvas').screenshot({path:screenshots+'/ar-dissolve-final.png'});
+    // The AR overlay must permit a fresh full replay without moving the bike.
+    await page.locator('#ar-replay').click();
+    await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'armed', {timeout: 4000});
+    await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'playing', {timeout: 30000});
+    await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'complete', {timeout: 18000});
     const errors = getErrors();
     await page.close();
-    if (middle.equals(finished) || finished.length < 28000 || errors.some((e) => e.startsWith('PAGE:') || e.includes('Shader Error'))) {
-      throw Error('AR particle reconstruction failed: '+JSON.stringify({middle:middle.length,finished:finished.length,errors}));
+    if (firstFrame.equals(finished) || middle.equals(finished) || finished.length < 28000 ||
+        errors.some((e) => e.startsWith('PAGE:') || e.includes('Shader Error'))) {
+      throw Error('AR particle reconstruction failed: '+JSON.stringify({held:firstFrame.length,middle:middle.length,finished:finished.length,errors}));
     }
-    return {partialBytes:middle.length,finalBytes:finished.length,errors};
+    return {heldBytes:firstFrame.length,partialBytes:middle.length,finalBytes:finished.length,replay:true,errors};
   });
 
   await trial('AR Samsung Chrome settings guide', async () => {

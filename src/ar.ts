@@ -349,6 +349,12 @@ splatAsset.on('load', () => {
         modelRoot.enabled = true;
         placed = true;
         armPlacedReveal();
+        if (arRevealEffect) {
+            canvas.dataset.fxWorldBottom = String(arRevealEffect.aabbMin.y);
+            canvas.dataset.fxWorldTop = String(arRevealEffect.aabbMax.y);
+        }
+        canvas.dataset.fxPreviewY = String(y);
+        canvas.dataset.fxPreviewScale = String(size);
     }
 });
 

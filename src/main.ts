@@ -886,7 +886,9 @@ splatAsset.on('load', () => {
     // Install the PlayCanvas dissolve on the original unified GSplat renderer.
     // The opening animation is held at the invisible first frame until the loader exits.
     splat.addComponent('script');
-    revealEffect = splat.script!.create(KtmVerticalDissolve) as KtmVerticalDissolve;
+    const createdReveal = splat.script!.create(KtmVerticalDissolve);
+    if (!createdReveal) throw new Error('Could not initialize KTM dissolve');
+    revealEffect = createdReveal as unknown as KtmVerticalDissolve;
     configureKtmVerticalDissolve(revealEffect, aabb);
     canvas.dataset.fxState = 'ready';
 

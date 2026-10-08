@@ -274,38 +274,65 @@ try {
     return result;
   });
 
-  await trial('AR placement dissolve preview', async () => {
-    const page = await browser.newPage({ viewport: { width: 412, height: 915 } });
-    const getErrors = attach(page, 'AR dissolve');
-    const url = new URL('ar.html?fxPreview=1', base);
-    await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    // A physically placed motorcycle must remain at its hidden first frame
-    // while GPU sort + first-use shader compilation warm up.
-    await page.waitForFunction(() => {
-      const c = document.querySelector('#ar-canvas');
-      return c?.dataset.fxState === 'armed' && c.dataset.fxProgress === '0';
-    }, {timeout: 45000});
-    const firstFrame = await page.locator('#ar-canvas').screenshot({path:screenshots+'/ar-dissolve-held.png'});
-    await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'playing', {timeout: 30000});
-    await page.waitForFunction(() => {
-      const c = document.querySelector('#ar-canvas');
-      return Number(c?.dataset.fxProgress) > 0.32 && Number(c?.dataset.fxProgress) < 0.98;
-    }, {timeout: 15000});
-    const middle = await page.locator('#ar-canvas').screenshot({path:screenshots+'/ar-dissolve-mid.png'});
-    await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'complete', {timeout: 18000});
-    const finished = await page.locator('#ar-canvas').screenshot({path:screenshots+'/ar-dissolve-final.png'});
-    // The AR overlay must permit a fresh full replay without moving the bike.
-    await page.locator('#ar-replay').click();
-    await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'armed', {timeout: 4000});
-    await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'playing', {timeout: 30000});
-    await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'complete', {timeout: 18000});
-    const errors = getErrors();
-    await page.close();
-    if (firstFrame.equals(finished) || middle.equals(finished) || finished.length < 28000 ||
-        errors.some((e) => e.startsWith('PAGE:') || e.includes('Shader Error'))) {
-      throw Error('AR particle reconstruction failed: '+JSON.stringify({held:firstFrame.length,middle:middle.length,finished:finished.length,errors}));
+  await trial('AR placement preserves physical scale and full bottom-up dissolve', async () => {
+    // Check two real-world placement poses: a floor at zero and a raised surface
+    // with custom user scale. Previously nearly all splats were outside the
+    // untransformed local-height shader bounds and appeared instantaneously.
+    const placements = [
+      {floorY:0, scale:1, label:'floor'},
+      {floorY:1.1, scale:1.4, label:'raised'}
+    ];
+    const results = [];
+    for (const p of placements) {
+      const page = await browser.newPage({ viewport: { width: 412, height: 915 } });
+      const getErrors = attach(page, 'AR dissolve '+p.label);
+      const url = new URL('ar.html?fxPreview=1&fxY='+p.floorY+'&fxScale='+p.scale, base);
+      await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForFunction(() => {
+        const c = document.querySelector('#ar-canvas');
+        return c?.dataset.fxState === 'armed' && c.dataset.fxProgress === '0';
+      }, {timeout: 45000});
+      const initial = await page.locator('#ar-canvas').screenshot({path:screenshots+'/ar-'+p.label+'-start.png'});
+      const bbox = await page.locator('#ar-canvas').evaluate(el=>({
+        bottom:Number(el.dataset.fxWorldBottom),
+        top:Number(el.dataset.fxWorldTop),
+        y:Number(el.dataset.fxPreviewY),
+        scale:Number(el.dataset.fxPreviewScale)
+      }));
+      await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'playing', {timeout: 30000});
+      await page.waitForFunction(() => {
+        const c=document.querySelector('#ar-canvas');
+        return Number(c?.dataset.fxProgress)>0.40 && Number(c?.dataset.fxProgress)<0.80;
+      }, {timeout: 18000});
+      const middle = await page.locator('#ar-canvas').screenshot({path:screenshots+'/ar-'+p.label+'-middle.png'});
+      await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'complete', {timeout: 18000});
+      const finished = await page.locator('#ar-canvas').screenshot({path:screenshots+'/ar-'+p.label+'-complete.png'});
+      const replayIsGone = await page.locator('#ar-replay').count() === 0;
+      const errors = getErrors();
+      await page.close();
+
+      // Placement restores the original fixed 2.05 m model length; the
+      // dissolve must cover its *world* height at each placement/scaling.
+      const correctBounds = Math.abs(bbox.bottom - p.floorY) < 0.12 &&
+        Math.abs((bbox.top-bbox.bottom)-2.05*p.scale) < 0.18 &&
+        bbox.y===p.floorY && bbox.scale===p.scale;
+
+      // Do not confuse changing a tiny rim with a proper bottom-up reveal:
+      // initial, middle and complete frames must have noticeably different
+      // Gaussian coverage in BOTH placement poses.
+      const realReveal = initial.length < finished.length * 0.55 &&
+        middle.length > initial.length * 1.3 &&
+        finished.length > middle.length * 1.1;
+      if (!correctBounds || !realReveal || !replayIsGone ||
+          errors.some(e=>e.startsWith('PAGE:')||e.includes('Shader Error'))) {
+        throw Error('AR dissolve/placement regression: '+JSON.stringify({
+          label:p.label,bbox,correctBounds,initial:initial.length,
+          middle:middle.length,finished:finished.length,replayIsGone,errors
+        }));
+      }
+      results.push({pose:p.label,bbox,initial:initial.length,middle:middle.length,finished:finished.length,errors});
     }
-    return {heldBytes:firstFrame.length,partialBytes:middle.length,finalBytes:finished.length,replay:true,errors};
+    return {placements:results};
   });
 
   await trial('AR Samsung Chrome settings guide', async () => {

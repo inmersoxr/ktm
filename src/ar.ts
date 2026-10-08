@@ -35,6 +35,8 @@ const backButton = document.querySelector<HTMLButtonElement>('#ar-back');
 const status = document.querySelector<HTMLDivElement>('#ar-status');
 const arUi = document.querySelector<HTMLElement>('#ar-ui');
 const arTip = document.querySelector<HTMLElement>('#ar-tip');
+const replayButton = document.querySelector<HTMLButtonElement>('#ar-replay');
+const arPreview = new URLSearchParams(window.location.search).has('fxPreview');
 let arTipTimeout: number | undefined;
 const hideArTip = () => {
     if (arTipTimeout !== undefined) window.clearTimeout(arTipTimeout);
@@ -209,6 +211,43 @@ let splatEntity: Entity | null = null;
 let splatBounds: BoundingBox | undefined;
 let arRevealEffect: KtmVerticalDissolve | null = null;
 let placed = false;
+
+// AR splats can take several real seconds to compile and sort on a phone.
+// Keep the dissolve on its fully hidden first frame until actual Gaussian
+// frames are ready, then allow 30 additional frames for the first GPU draw.
+const AR_RENDER_WARMUP_FRAMES = 30;
+let revealArmed = false;
+let stableReadyFrames = 0;
+
+const prepareArReveal = () => {
+    if (!arRevealEffect) return;
+    arRevealEffect.armReveal();
+    revealArmed = true;
+    stableReadyFrames = 0;
+    canvas.dataset.fxWaitFrames = '0';
+    if (placed) setStatus('Preparando la aparición de la KTM…');
+};
+
+app.systems.gsplat.on('frame:ready', (renderCamera, _layer, ready: boolean, loadingCount: number) => {
+    if (!revealArmed || !modelRoot.enabled || renderCamera !== camera.camera) return;
+    if (!ready || loadingCount > 0) {
+        stableReadyFrames = 0;
+        return;
+    }
+    stableReadyFrames += 1;
+    canvas.dataset.fxWaitFrames = String(stableReadyFrames);
+    if (stableReadyFrames >= AR_RENDER_WARMUP_FRAMES) {
+        revealArmed = false;
+        arRevealEffect?.startReveal();
+        if (placed) setStatus('KTM materializándose…');
+    }
+});
+
+replayButton?.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (placed) prepareArReveal();
+});
 let latestPosition: Vec3 | null = null;
 let latestRotation: Quat | null = null;
 let latestHitResult: any = null;
@@ -303,11 +342,11 @@ splatAsset.on('load', () => {
 
     // Browser-only shader validation: exercises the exact AR material, scale
     // and parent hierarchy without requiring phone hardware during CI.
-    if (new URLSearchParams(window.location.search).has('fxPreview')) {
+    if (arPreview) {
         camera.setPosition(0, 1.35, 3.2);
         camera.lookAt(0, 0.85, 0);
         modelRoot.enabled = true;
-        arRevealEffect?.startReveal();
+        prepareArReveal();
     }
 });
 
@@ -353,10 +392,10 @@ const placeAtLatestHit = () => {
 
     applyPlacementPose(position);
     modelRoot.enabled = true;
-    // Begin materialization only after the placement pose has been frozen.
-    // Starting on session entry would complete before the user found a floor.
-    arRevealEffect?.startReveal();
-    setStatus('KTM colocada. Pellizca con dos dedos para ajustar el tamaño.');
+    // The effect starts once the first WebXR Gaussian frames are actually ready.
+    // Until then every splat stays on the fully hidden first-frame shader state.
+    prepareArReveal();
+    if (replayButton) replayButton.hidden = false;
 
     // Create the anchor from the same XRHitTestResult used by the reticle.
     // This is the PlayCanvas/WebXR reference implementation path for stable
@@ -403,6 +442,9 @@ app.xr?.on('start', () => {
     arUi.style.touchAction = 'none';
     discardFloorHit();
     placed = false;
+    revealArmed = false;
+    stableReadyFrames = 0;
+    if (replayButton) replayButton.hidden = true;
     userScale = 1;
     pinchStartDistance = null;
     modelRoot.setLocalScale(1, 1, 1);
@@ -488,6 +530,9 @@ app.xr?.on('end', () => {
     userScale = 1;
     pinchStartDistance = null;
     placed = false;
+    revealArmed = false;
+    stableReadyFrames = 0;
+    if (replayButton) replayButton.hidden = true;
     discardFloorHit();
 
     // XR session end already owns disposal of native hit-test and anchor
@@ -505,6 +550,16 @@ app.xr?.on('end', () => {
     backButton.disabled = false;
     setStatus('Sesión RA finalizada.');
     diagnostics.ended();
+});
+
+// After the reveal, restore the standard placement hint and keep replay available.
+app.on('update', () => {
+    if (placed && canvas.dataset.fxState === 'complete' && canvas.dataset.fxStatusShown !== 'true') {
+        canvas.dataset.fxStatusShown = 'true';
+        setStatus('KTM colocada. Pellizca para cambiar el tamaño o pulsa Repetir.');
+    } else if (canvas.dataset.fxState !== 'complete') {
+        canvas.dataset.fxStatusShown = 'false';
+    }
 });
 
 // When hit-test events stop, remove the old ring so it cannot float.

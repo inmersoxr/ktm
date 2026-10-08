@@ -25,7 +25,7 @@ import {
 import type { BoundingBox, Quat, Vec3 } from 'playcanvas';
 
 import { SPLAT_URL } from './splat-config';
-import { KtmVerticalDissolve, configureKtmVerticalDissolve } from './effects/ktm-vertical-dissolve';
+import { KtmVerticalDissolve, configureKtmVerticalDissolve, syncKtmArDissolveBounds } from './effects/ktm-vertical-dissolve';
 import { createArDiagnostics } from './ar-diagnostics';
 import { acceptFloorSample, createFloorTracker, FLOOR_HIT_TIMEOUT_MS, isCurrentFloorRay, resetFloorTracker } from './ar-floor';
 
@@ -35,8 +35,6 @@ const backButton = document.querySelector<HTMLButtonElement>('#ar-back');
 const status = document.querySelector<HTMLDivElement>('#ar-status');
 const arUi = document.querySelector<HTMLElement>('#ar-ui');
 const arTip = document.querySelector<HTMLElement>('#ar-tip');
-const replayButton = document.querySelector<HTMLButtonElement>('#ar-replay');
-const arPreview = new URLSearchParams(window.location.search).has('fxPreview');
 let arTipTimeout: number | undefined;
 const hideArTip = () => {
     if (arTipTimeout !== undefined) window.clearTimeout(arTipTimeout);
@@ -210,44 +208,39 @@ app.root.addChild(reticle);
 let splatEntity: Entity | null = null;
 let splatBounds: BoundingBox | undefined;
 let arRevealEffect: KtmVerticalDissolve | null = null;
+let revealPending = false;
+let readyFrames = 0;
 let placed = false;
 
-// AR splats can take several real seconds to compile and sort on a phone.
-// Keep the dissolve on its fully hidden first frame until actual Gaussian
-// frames are ready, then allow 30 additional frames for the first GPU draw.
-const AR_RENDER_WARMUP_FRAMES = 30;
-let revealArmed = false;
-let stableReadyFrames = 0;
-
-const prepareArReveal = () => {
-    if (!arRevealEffect) return;
-    arRevealEffect.armReveal();
-    revealArmed = true;
-    stableReadyFrames = 0;
-    canvas.dataset.fxWaitFrames = '0';
-    if (placed) setStatus('Preparando la aparición de la KTM…');
+// The AR viewer's physical placement and authored scale are unchanged.
+// Only the effect's WORLD-SPACE bounds track the placed Gaussian.
+const syncRevealToPlacement = () => {
+    if (!arRevealEffect || !splatBounds || !splatEntity) return;
+    syncKtmArDissolveBounds(arRevealEffect, splatBounds, splatEntity);
 };
 
-app.systems.gsplat!.on('frame:ready', (renderCamera, _layer, ready: boolean, loadingCount: number) => {
-    if (!revealArmed || !modelRoot.enabled || renderCamera !== camera.camera) return;
+// The renderer must already have uploaded Gaussian data and compiled the
+// initial invisible shader frame before time is allowed to advance.
+app.systems.gsplat!.on('frame:ready', (_camera, _layer, ready: boolean, loadingCount: number) => {
+    if (!revealPending || !modelRoot.enabled) return;
     if (!ready || loadingCount > 0) {
-        stableReadyFrames = 0;
+        readyFrames = 0;
         return;
     }
-    stableReadyFrames += 1;
-    canvas.dataset.fxWaitFrames = String(stableReadyFrames);
-    if (stableReadyFrames >= AR_RENDER_WARMUP_FRAMES) {
-        revealArmed = false;
+    readyFrames++;
+    if (readyFrames >= 12) {
+        revealPending = false;
         arRevealEffect?.startReveal();
-        if (placed) setStatus('KTM materializándose…');
     }
 });
 
-replayButton?.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (placed) prepareArReveal();
-});
+const armPlacedReveal = () => {
+    if (!arRevealEffect) return;
+    syncRevealToPlacement();
+    arRevealEffect.armReveal();
+    revealPending = true;
+    readyFrames = 0;
+};
 let latestPosition: Vec3 | null = null;
 let latestRotation: Quat | null = null;
 let latestHitResult: any = null;
@@ -282,6 +275,7 @@ arUi.addEventListener('touchmove', (event) => {
     const ratio = distance / Math.max(pinchStartDistance, 1);
     userScale = Math.min(4, Math.max(0.15, pinchStartScale * ratio));
     modelRoot.setLocalScale(userScale, userScale, userScale);
+    syncRevealToPlacement();
     setStatus(`Tamaño: ${Math.round(userScale * 100)}%. Pellizca con dos dedos para ajustarlo.`);
     event.preventDefault();
 }, { passive: false });
@@ -309,15 +303,6 @@ splatAsset.on('load', () => {
     const resource = splatAsset.resource as { aabb?: BoundingBox } | null;
     splatBounds = resource?.aabb;
 
-    // The same original Gaussian dissolve used by the desktop showroom.
-    // Kept under the disabled placement root until an AR surface is selected.
-    splat.addComponent('script');
-    const createdReveal = splat.script!.create(KtmVerticalDissolve);
-    if (!createdReveal) throw new Error('Could not initialize KTM AR dissolve');
-    arRevealEffect = createdReveal as unknown as KtmVerticalDissolve;
-    configureKtmVerticalDissolve(arRevealEffect, splatBounds);
-    canvas.dataset.fxState = 'ready';
-
     if (splatBounds) {
         const size = splatBounds.halfExtents.clone().mulScalar(2);
         const capturedLength = Math.max(size.x, size.y, size.z);
@@ -338,17 +323,45 @@ splatAsset.on('load', () => {
 
     modelRoot.addChild(splat);
     splatEntity = splat;
+
+    // Attach the same dissolve as the showroom, with the original AR model
+    // scale, pivot, pose, reticle and anchor setup left exactly as authored.
+    splat.addComponent('script');
+    const effectScript = splat.script!.create(KtmVerticalDissolve);
+    if (!effectScript) throw new Error('KTM AR dissolve could not initialize');
+    arRevealEffect = effectScript as unknown as KtmVerticalDissolve;
+    configureKtmVerticalDissolve(arRevealEffect, splatBounds);
+    syncRevealToPlacement();
     diagnostics.modelReady();
 
-    // Browser-only shader validation: exercises the exact AR material, scale
-    // and parent hierarchy without requiring phone hardware during CI.
-    if (arPreview) {
-        camera.setPosition(0, 1.35, 3.2);
-        camera.lookAt(0, 0.85, 0);
+    // Automated browser-only preview. Uses the same placement transform path
+    // as real WebXR, including nonzero floor height and user scale.
+    const preview = new URLSearchParams(window.location.search);
+    if (preview.has('fxPreview')) {
+        const floorY = Number(preview.get('fxY') ?? '0');
+        const previewScale = Number(preview.get('fxScale') ?? '1');
+        const y = Number.isFinite(floorY) ? floorY : 0;
+        const size = Number.isFinite(previewScale) && previewScale > 0 ? previewScale : 1;
+        camera.setPosition(0, y + 1.35 * size, 3.2 * size);
+        camera.lookAt(0, y + 0.85 * size, 0);
+        modelRoot.setPosition(0, y, 0);
+        modelRoot.setLocalScale(size, size, size);
         modelRoot.enabled = true;
         placed = true;
-        if (replayButton) replayButton.hidden = false;
-        prepareArReveal();
+        armPlacedReveal();
+        if (arRevealEffect) {
+            canvas.dataset.fxWorldBottom = String(arRevealEffect.aabbMin.y);
+            canvas.dataset.fxWorldTop = String(arRevealEffect.aabbMax.y);
+        }
+        canvas.dataset.fxPreviewY = String(y);
+        canvas.dataset.fxPreviewScale = String(size);
+        if (splatBounds) {
+            const sourceSize = splatBounds.halfExtents.clone().mulScalar(2);
+            const normalized = 2.05 / Math.max(sourceSize.x, sourceSize.y, sourceSize.z);
+            // Preserve and validate the ORIGINAL authored scale: 2.05m applies
+            // to the longest side of the scan, not necessarily its height.
+            canvas.dataset.fxExpectedHeight = String(sourceSize.y * normalized * size);
+        }
     }
 });
 
@@ -394,10 +407,8 @@ const placeAtLatestHit = () => {
 
     applyPlacementPose(position);
     modelRoot.enabled = true;
-    // The effect starts once the first WebXR Gaussian frames are actually ready.
-    // Until then every splat stays on the fully hidden first-frame shader state.
-    prepareArReveal();
-    if (replayButton) replayButton.hidden = false;
+    armPlacedReveal();
+    setStatus('KTM colocada. Pellizca con dos dedos para ajustar el tamaño.');
 
     // Create the anchor from the same XRHitTestResult used by the reticle.
     // This is the PlayCanvas/WebXR reference implementation path for stable
@@ -420,6 +431,7 @@ const placeAtLatestHit = () => {
             if (activeAnchor !== anchor) return;
             modelRoot.setPosition(anchor.getPosition());
             modelRoot.setEulerAngles(0, 0, 0);
+            syncRevealToPlacement();
         };
 
         // The callback is issued after the first valid anchor pose exists.
@@ -444,9 +456,8 @@ app.xr?.on('start', () => {
     arUi.style.touchAction = 'none';
     discardFloorHit();
     placed = false;
-    revealArmed = false;
-    stableReadyFrames = 0;
-    if (replayButton) replayButton.hidden = true;
+    revealPending = false;
+    readyFrames = 0;
     userScale = 1;
     pinchStartDistance = null;
     modelRoot.setLocalScale(1, 1, 1);
@@ -532,9 +543,8 @@ app.xr?.on('end', () => {
     userScale = 1;
     pinchStartDistance = null;
     placed = false;
-    revealArmed = false;
-    stableReadyFrames = 0;
-    if (replayButton) replayButton.hidden = true;
+    revealPending = false;
+    readyFrames = 0;
     discardFloorHit();
 
     // XR session end already owns disposal of native hit-test and anchor
@@ -552,16 +562,6 @@ app.xr?.on('end', () => {
     backButton.disabled = false;
     setStatus('Sesión RA finalizada.');
     diagnostics.ended();
-});
-
-// After the reveal, restore the standard placement hint and keep replay available.
-app.on('update', () => {
-    if (placed && canvas.dataset.fxState === 'complete' && canvas.dataset.fxStatusShown !== 'true') {
-        canvas.dataset.fxStatusShown = 'true';
-        setStatus('KTM colocada. Pellizca para cambiar el tamaño o pulsa Repetir.');
-    } else if (canvas.dataset.fxState !== 'complete') {
-        canvas.dataset.fxStatusShown = 'false';
-    }
 });
 
 // When hit-test events stop, remove the old ring so it cannot float.

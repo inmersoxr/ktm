@@ -297,7 +297,8 @@ try {
         bottom:Number(el.dataset.fxWorldBottom),
         top:Number(el.dataset.fxWorldTop),
         y:Number(el.dataset.fxPreviewY),
-        scale:Number(el.dataset.fxPreviewScale)
+        scale:Number(el.dataset.fxPreviewScale),
+        expectedHeight:Number(el.dataset.fxExpectedHeight)
       }));
       await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'playing', {timeout: 30000});
       await page.waitForFunction(() => {
@@ -311,10 +312,12 @@ try {
       const errors = getErrors();
       await page.close();
 
-      // Placement restores the original fixed 2.05 m model length; the
-      // dissolve must cover its *world* height at each placement/scaling.
+      // The original placement makes the LONGEST scan dimension 2.05m.
+      // Its actual vertical extent comes from the authored AABB and must
+      // follow the chosen AR floor height and unchanged user scale exactly.
       const correctBounds = Math.abs(bbox.bottom - p.floorY) < 0.12 &&
-        Math.abs((bbox.top-bbox.bottom)-2.05*p.scale) < 0.18 &&
+        bbox.expectedHeight>0.6 &&
+        Math.abs((bbox.top-bbox.bottom)-bbox.expectedHeight) < 0.13*p.scale &&
         bbox.y===p.floorY && bbox.scale===p.scale;
 
       // Do not confuse changing a tiny rim with a proper bottom-up reveal:

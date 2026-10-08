@@ -1,0 +1,37 @@
+name: Validate AR Original Placement and World Dissolve
+
+on:
+  push:
+    branches: [fix/ar-original-placement-world-dissolve]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: TypeScript and Vite build
+        run: npm run build
+      - name: Original placement and geometry invariants
+        run: node scripts/test-geometry.mjs
+      - name: Install browser tests
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Test showroom and AR at floor and raised placements
+        run: node scripts/smoke.mjs
+      - name: Upload AR render screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ktm-ar-world-bounds
+          path: smoke-results/
+          if-no-files-found: ignore

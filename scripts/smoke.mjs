@@ -49,6 +49,18 @@ try {
     await page.waitForSelector('#view-nav .view-button', { timeout: 20000 });
     let model = false;
     try { await page.waitForFunction(() => document.querySelector('#loader')?.dataset.hidden === 'true', { timeout: 45000 }); model = true; } catch {}
+    // Validate the actual effect in headless Chromium before visual-interaction tests:
+    // initially hidden, partial reconstruction, and fully restored on completion.
+    let revealVerified = false;
+    if (model) {
+      await page.waitForFunction(() => document.querySelector('#app')?.dataset.fxState === 'playing', {timeout: 10000});
+      await page.waitForFunction(() => Number(document.querySelector('#app')?.dataset.fxProgress) > 0.42, {timeout: 10000});
+      const middle = await page.locator('#app').screenshot({path:screenshots+'/viewer-dissolve-mid.png'});
+      await page.waitForFunction(() => document.querySelector('#app')?.dataset.fxState === 'complete', {timeout: 12000});
+      const finished = await page.locator('#app').screenshot({path:screenshots+'/viewer-dissolve-final.png'});
+      revealVerified = !middle.equals(finished) && finished.length > middle.length * 1.1;
+      if (!revealVerified) throw Error('Gaussian dissolve did not visibly reconstruct: middle='+middle.length+' final='+finished.length);
+    }
     const hintHidden = model && await page.locator('#gesture-hint').evaluate((element) => getComputedStyle(element).display === 'none');
     let verticalOrbitChangedImage = false;
     let hintDismissedByGesture = false;

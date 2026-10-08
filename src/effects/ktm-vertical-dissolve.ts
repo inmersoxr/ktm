@@ -36,9 +36,25 @@ export class KtmVerticalDissolve extends GsplatDissolveShaderEffect {
         (dissolveFbm((*center) * uniform.uNoiseFrequency) - 0.5) * 0.22, 0.0, 1.0);`);
     }
 
+    /**
+     * Prepare the invisible first frame while AR uploads, sorts and compiles the
+     * Gaussian. The caller decides when real rendering is ready to begin.
+     */
+    armReveal(): void {
+        this.playing = false;
+        this.effectTime = 0;
+        if (!this.enabled) this.enabled = true;
+        // Apply the reverse-dissolve's initial uniforms before the first draw.
+        if (this.material) this.updateEffect(0, 0);
+        const canvas = document.querySelector<HTMLCanvasElement>('#app, #ar-canvas');
+        if (canvas) {
+            canvas.dataset.fxState = 'armed';
+            canvas.dataset.fxProgress = '0';
+        }
+    }
+
     startReveal(): void {
-        // Re-enable after completion, including when a new WebXR session places
-        // the motorcycle again. The base class reinstalls its material chunk.
+        // Re-enable after completion (for AR replay / a new XR session).
         if (!this.enabled) this.enabled = true;
         this.effectTime = 0;
         this.playing = true;
@@ -47,6 +63,15 @@ export class KtmVerticalDissolve extends GsplatDissolveShaderEffect {
             canvas.dataset.fxState = 'playing';
             canvas.dataset.fxProgress = '0';
         }
+    }
+
+    update(dt: number): void {
+        // WebXR on phones can stall for several seconds during first-use shader
+        // compilation and Gaussian sorting. Never count invisible wall-clock
+        // time as several seconds of animation: advance at most one rendered
+        // 30 Hz frame per app update. Desktop retains its existing timing.
+        const arMode = Boolean(document.querySelector('#ar-canvas'));
+        super.update(arMode ? Math.min(Math.max(dt, 0), 1 / 30) : dt);
     }
 
     updateEffect(effectTime: number, dt: number): void {

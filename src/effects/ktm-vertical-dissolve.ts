@@ -37,9 +37,16 @@ export class KtmVerticalDissolve extends GsplatDissolveShaderEffect {
     }
 
     startReveal(): void {
+        // Re-enable after completion, including when a new WebXR session places
+        // the motorcycle again. The base class reinstalls its material chunk.
+        if (!this.enabled) this.enabled = true;
         this.effectTime = 0;
         this.playing = true;
-        document.querySelector<HTMLCanvasElement>('#app')?.setAttribute('data-fx-state', 'playing');
+        const canvas = document.querySelector<HTMLCanvasElement>('#app, #ar-canvas');
+        if (canvas) {
+            canvas.dataset.fxState = 'playing';
+            canvas.dataset.fxProgress = '0';
+        }
     }
 
     updateEffect(effectTime: number, dt: number): void {
@@ -50,7 +57,7 @@ export class KtmVerticalDissolve extends GsplatDissolveShaderEffect {
             return;
         }
 
-        const canvas = document.querySelector<HTMLCanvasElement>('#app');
+        const canvas = document.querySelector<HTMLCanvasElement>('#app, #ar-canvas');
         if (canvas) canvas.dataset.fxProgress = String(Math.min(1, elapsed / this.duration));
         if (elapsed >= this.duration) {
             this.playing = false;
@@ -78,7 +85,7 @@ export function configureKtmVerticalDissolve(
     // a complete dissolve despite the model's unusual authored coordinates.
     effect.aabbMin = new Vec3(-100, bottom, -100);
     effect.aabbMax = new Vec3(100, top, 100);
-    effect.duration = 3.4;
+    effect.duration = 4.4;
     effect.dissolve = false; // Reassemble, rather than dissolve away.
     effect.noiseFrequency = 7;
     effect.edgeWidth = 0.16;

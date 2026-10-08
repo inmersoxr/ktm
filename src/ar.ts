@@ -346,6 +346,8 @@ splatAsset.on('load', () => {
         camera.setPosition(0, 1.35, 3.2);
         camera.lookAt(0, 0.85, 0);
         modelRoot.enabled = true;
+        placed = true;
+        if (replayButton) replayButton.hidden = false;
         prepareArReveal();
     }
 });

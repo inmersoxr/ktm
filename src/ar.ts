@@ -355,6 +355,13 @@ splatAsset.on('load', () => {
         }
         canvas.dataset.fxPreviewY = String(y);
         canvas.dataset.fxPreviewScale = String(size);
+        if (splatBounds) {
+            const sourceSize = splatBounds.halfExtents.clone().mulScalar(2);
+            const normalized = 2.05 / Math.max(sourceSize.x, sourceSize.y, sourceSize.z);
+            // Preserve and validate the ORIGINAL authored scale: 2.05m applies
+            // to the longest side of the scan, not necessarily its height.
+            canvas.dataset.fxExpectedHeight = String(sourceSize.y * normalized * size);
+        }
     }
 });
 

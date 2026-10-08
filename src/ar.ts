@@ -228,7 +228,7 @@ const prepareArReveal = () => {
     if (placed) setStatus('Preparando la aparición de la KTM…');
 };
 
-app.systems.gsplat.on('frame:ready', (renderCamera, _layer, ready: boolean, loadingCount: number) => {
+app.systems.gsplat!.on('frame:ready', (renderCamera, _layer, ready: boolean, loadingCount: number) => {
     if (!revealArmed || !modelRoot.enabled || renderCamera !== camera.camera) return;
     if (!ready || loadingCount > 0) {
         stableReadyFrames = 0;

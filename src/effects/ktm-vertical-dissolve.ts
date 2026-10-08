@@ -1,5 +1,5 @@
-import { Color, Vec3 } from 'playcanvas';
-import type { BoundingBox } from 'playcanvas';
+import { BoundingBox, Color, Vec3 } from 'playcanvas';
+import type { Entity } from 'playcanvas';
 // PlayCanvas publishes this official shader-effect script as ESM without a TypeScript declaration.
 // @ts-ignore -- official PlayCanvas 2.20.0 ESM script
 import { GsplatDissolveShaderEffect } from 'playcanvas/scripts/esm/gsplat/shader-effect-dissolve.mjs';
@@ -119,4 +119,27 @@ export function configureKtmVerticalDissolve(
     effect.liftDistance = 0.13;
     effect.waveAmplitude = 0.018;
     effect.waveFrequency = 7;
+}
+
+/**
+ * Apply the dissolve to the model's real WORLD-space vertical extent.
+ *
+ * Unified GSplat passes world-space centers to gsplatModifyVS. The showroom
+ * happened to use an untransformed model; AR positions the same asset on a
+ * physical floor and scales it to ~2m. Bounds computed from unscaled local
+ * coordinates leave most of the AR splats outside the dissolve, making the
+ * bike appear instantly. This is strictly a shader-uniform update and never
+ * alters the tested WebXR placement pose, scale, pivot or anchor.
+ */
+export function syncKtmArDissolveBounds(
+    effect: KtmVerticalDissolve,
+    localBounds: BoundingBox,
+    splatEntity: Entity
+): void {
+    const worldBounds = new BoundingBox();
+    worldBounds.setFromTransformedAabb(localBounds, splatEntity.getWorldTransform());
+    const margin = Math.max(0.015, worldBounds.halfExtents.y * 0.015);
+    // Horizontal coordinates are left unrestricted; only height drives reveal.
+    effect.aabbMin.set(-100000, worldBounds.center.y - worldBounds.halfExtents.y - margin, -100000);
+    effect.aabbMax.set(100000, worldBounds.center.y + worldBounds.halfExtents.y + margin, 100000);
 }

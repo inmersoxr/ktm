@@ -274,6 +274,27 @@ try {
     return result;
   });
 
+  await trial('AR placement dissolve preview', async () => {
+    const page = await browser.newPage({ viewport: { width: 412, height: 915 } });
+    const getErrors = attach(page, 'AR dissolve');
+    const url = new URL('ar.html?fxPreview=1', base);
+    await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'playing', {timeout: 45000});
+    await page.waitForFunction(() => {
+      const c = document.querySelector('#ar-canvas');
+      return Number(c?.dataset.fxProgress) > 0.32 && Number(c?.dataset.fxProgress) < 0.98;
+    }, {timeout: 15000});
+    const middle = await page.locator('#ar-canvas').screenshot({path:screenshots+'/ar-dissolve-mid.png'});
+    await page.waitForFunction(() => document.querySelector('#ar-canvas')?.dataset.fxState === 'complete', {timeout: 18000});
+    const finished = await page.locator('#ar-canvas').screenshot({path:screenshots+'/ar-dissolve-final.png'});
+    const errors = getErrors();
+    await page.close();
+    if (middle.equals(finished) || finished.length < 28000 || errors.some((e) => e.startsWith('PAGE:') || e.includes('Shader Error'))) {
+      throw Error('AR particle reconstruction failed: '+JSON.stringify({middle:middle.length,finished:finished.length,errors}));
+    }
+    return {partialBytes:middle.length,finalBytes:finished.length,errors};
+  });
+
   await trial('AR Samsung Chrome settings guide', async () => {
     const context = await browser.newContext({
       viewport: { width: 412, height: 915 },

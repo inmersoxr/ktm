@@ -11,6 +11,7 @@ import {
     GSplatHandler,
     RenderComponentSystem,
     RESOLUTION_AUTO,
+    ScriptComponentSystem,
     StandardMaterial,
     TextureHandler,
     XRSPACE_LOCAL,
@@ -24,6 +25,7 @@ import {
 import type { BoundingBox, Quat, Vec3 } from 'playcanvas';
 
 import { SPLAT_URL } from './splat-config';
+import { KtmVerticalDissolve, configureKtmVerticalDissolve } from './effects/ktm-vertical-dissolve';
 import { createArDiagnostics } from './ar-diagnostics';
 import { acceptFloorSample, createFloorTracker, FLOOR_HIT_TIMEOUT_MS, isCurrentFloorRay, resetFloorTracker } from './ar-floor';
 
@@ -160,7 +162,7 @@ device.maxPixelRatio = Math.min(window.devicePixelRatio, 2);
 const options = new AppOptions();
 options.graphicsDevice = device;
 options.xr = XrManager;
-options.componentSystems = [CameraComponentSystem, GSplatComponentSystem, RenderComponentSystem];
+options.componentSystems = [CameraComponentSystem, GSplatComponentSystem, RenderComponentSystem, ScriptComponentSystem];
 options.resourceHandlers = [TextureHandler, GSplatHandler];
 
 const app = new AppBase(canvas);
@@ -205,6 +207,7 @@ app.root.addChild(reticle);
 
 let splatEntity: Entity | null = null;
 let splatBounds: BoundingBox | undefined;
+let arRevealEffect: KtmVerticalDissolve | null = null;
 let placed = false;
 let latestPosition: Vec3 | null = null;
 let latestRotation: Quat | null = null;
@@ -267,6 +270,15 @@ splatAsset.on('load', () => {
     const resource = splatAsset.resource as { aabb?: BoundingBox } | null;
     splatBounds = resource?.aabb;
 
+    // The same original Gaussian dissolve used by the desktop showroom.
+    // Kept under the disabled placement root until an AR surface is selected.
+    splat.addComponent('script');
+    const createdReveal = splat.script!.create(KtmVerticalDissolve);
+    if (!createdReveal) throw new Error('Could not initialize KTM AR dissolve');
+    arRevealEffect = createdReveal as unknown as KtmVerticalDissolve;
+    configureKtmVerticalDissolve(arRevealEffect, splatBounds);
+    canvas.dataset.fxState = 'ready';
+
     if (splatBounds) {
         const size = splatBounds.halfExtents.clone().mulScalar(2);
         const capturedLength = Math.max(size.x, size.y, size.z);
@@ -288,6 +300,15 @@ splatAsset.on('load', () => {
     modelRoot.addChild(splat);
     splatEntity = splat;
     diagnostics.modelReady();
+
+    // Browser-only shader validation: exercises the exact AR material, scale
+    // and parent hierarchy without requiring phone hardware during CI.
+    if (new URLSearchParams(window.location.search).has('fxPreview')) {
+        camera.setPosition(0, 1.35, 3.2);
+        camera.lookAt(0, 0.85, 0);
+        modelRoot.enabled = true;
+        arRevealEffect?.startReveal();
+    }
 });
 
 splatAsset.on('error', (error: unknown) => {
@@ -332,6 +353,9 @@ const placeAtLatestHit = () => {
 
     applyPlacementPose(position);
     modelRoot.enabled = true;
+    // Begin materialization only after the placement pose has been frozen.
+    // Starting on session entry would complete before the user found a floor.
+    arRevealEffect?.startReveal();
     setStatus('KTM colocada. Pellizca con dos dedos para ajustar el tamaño.');
 
     // Create the anchor from the same XRHitTestResult used by the reticle.

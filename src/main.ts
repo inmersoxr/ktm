@@ -11,6 +11,7 @@ import {
     GSplatComponentSystem,
     GSplatHandler,
     RESOLUTION_AUTO,
+    ScriptComponentSystem,
     TextureHandler,
     Vec3,
     XRSPACE_LOCALFLOOR,
@@ -20,6 +21,7 @@ import {
 import type { BoundingBox } from 'playcanvas';
 
 import './style.css';
+import { KtmVerticalDissolve, configureKtmVerticalDissolve } from './effects/ktm-vertical-dissolve';
 import { DESKTOP_CAMERA_FOV, DESKTOP_MODEL_SCALE, prepareViewerPose } from './viewer-camera';
 import { orbitAboveCenter } from './orbit-geometry';
 import type { CameraPose, ProductView } from './splat-config';
@@ -51,6 +53,7 @@ if (!canvas) {
 const desktopLayout = window.matchMedia('(min-width: 980px) and (min-aspect-ratio: 4/3), (min-width: 900px) and (pointer: fine)');
 let isDesktopViewer = desktopLayout.matches;
 canvas.dataset.viewerLayout = isDesktopViewer ? 'desktop' : 'mobile';
+canvas.dataset.fxState = 'loading';
 const DEFAULT_FOV = isDesktopViewer ? DESKTOP_CAMERA_FOV : 75;
 const DEFAULT_CAMERA_DIRECTION = new Vec3(2, 1, 2).normalize();
 const DEFAULT_PITCH = (Math.asin(DEFAULT_CAMERA_DIRECTION.y) * 180) / Math.PI;
@@ -101,7 +104,7 @@ console.info('[KTM viewer] graphics device:', device.deviceType);
 
 const createOptions = new AppOptions();
 createOptions.graphicsDevice = device;
-createOptions.componentSystems = [CameraComponentSystem, GSplatComponentSystem];
+createOptions.componentSystems = [CameraComponentSystem, GSplatComponentSystem, ScriptComponentSystem];
 createOptions.resourceHandlers = [TextureHandler, GSplatHandler];
 
 const app = new AppBase(canvas);
@@ -154,6 +157,7 @@ let activeView = 0;
 let transition: { start: number; duration: number; from: CameraPose; to: CameraPose } | null = null;
 let splatEntity: Entity | null = null;
 let splatBounds: BoundingBox | undefined;
+let revealEffect: KtmVerticalDissolve | null = null;
 const CAMERA_STORAGE_KEY = 'ktm-camera-views-v7';
 
 const isFinitePose = (pose: Partial<CameraPose> | null | undefined): pose is CameraPose =>
@@ -879,6 +883,13 @@ splatAsset.on('load', () => {
     const aabb = resource?.aabb;
     splatBounds = aabb;
 
+    // Install the PlayCanvas dissolve on the original unified GSplat renderer.
+    // The opening animation is held at the invisible first frame until the loader exits.
+    splat.addComponent('script');
+    revealEffect = splat.script!.create(KtmVerticalDissolve) as KtmVerticalDissolve;
+    configureKtmVerticalDissolve(revealEffect, aabb);
+    canvas.dataset.fxState = 'ready';
+
     // Rz(180°) sends local (x,y,z) to (-x,-y,z).
     // The pivot is created at that exact transformed AABB center, before
     // parenting the splat, so its local origin cannot offset the rotation.
@@ -910,6 +921,7 @@ splatAsset.on('load', () => {
     // the showroom. Asset load alone does not imply WebGPU has drawn it yet.
     window.setTimeout(() => {
         hideLoader();
+        revealEffect?.startReveal();
         showGestureHint();
     }, 450);
 });
